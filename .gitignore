@@ -1,0 +1,8 @@
+*.a
+*.exe
+*.o
+lisp
+.gdb_history
+lispcc
+old
+extend
