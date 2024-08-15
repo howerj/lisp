@@ -59,7 +59,6 @@ struct lisp { /* Should be opaque, do not mess with the internals */
 	lisp_cell_t *interned /* interned symbols */, *env /* top level environment */,
 		    **gc_stack, /* garbage collection stack used in eval */
 		    *Nil, *Tee, *Fn, *Quote, *If, *Loop, *Define, *Set, *Progn, *Error;
-	lisp_stack_t *stack; /* execution sack, used to avoid recursion in read/write */
 	lisp_gc_list_t *gc_head; /* list of all allocated cells */
 	int ungetch /* single character unget buffer */, depth /* saved recursion depth for eval */;
 	char *buf, *bufback; /* used to store symbols/strings whilst parsing */
@@ -69,7 +68,7 @@ struct lisp { /* Should be opaque, do not mess with the internals */
 
 LISP_EXTERN int lisp_asserts(lisp_t *l);
 LISP_EXTERN int lisp_init(lisp_t *l);
-LISP_EXTERN int lisp_write(lisp_t *l, int (*put)(void *param, int ch), void *param, lisp_cell_t *obj);
+LISP_EXTERN int lisp_write(lisp_t *l, int (*put)(void *param, int ch), void *param, lisp_cell_t *obj, int depth);
 LISP_EXTERN int lisp_function_add(lisp_t *l, const char *symbol, lisp_function_t fn, void *param);
 LISP_EXTERN int lisp_unit_tests(lisp_t *l);
 LISP_EXTERN int lisp_gc(lisp_t *l, int force);
@@ -212,17 +211,12 @@ static lisp_cell_t *lisp_gc_add(lisp_t *l, lisp_cell_t *op) {
 	return r;
 }
 
-/* TODO: Serialization/Deserialization examples (probably need strings and floats 
- * for that, which could be done with custom types)
- * This would be for the `https://github.com/howerj/gladiator` project, so
- * would need scanf/printf formatting serdes functions */
-/* TODO: If we are making an integer we should keep a small cache of them around and return that instead (at least 0, 1, -1). */
 LISP_API lisp_cell_t *lisp_make_object(lisp_t *l, int type, size_t count, ...) {
 	if (lisp_asserts(l) < 0) { assert(l->Error); return l->Error; }
 	assert(type != LISP_INVALID);
 	lisp_cell_t *r = (lisp_cell_t*)lisp_alloc(l, sizeof (*r) + count*(sizeof (r->t[0])));
 	if (!r) goto end;
-	lisp_type_set(r, type);
+	lisp_type_set(r, type); /* For integer types a small cache (<16) of the most common values could be used instead */
 	lisp_length_set(r, count);
 	va_list ap;
 	va_start(ap, count);
@@ -360,7 +354,6 @@ static lisp_cell_t *lisp_extend_top(lisp_t *l, lisp_cell_t *sym, lisp_cell_t *va
 	return val;
 }
 
-/* TODO: Rewrite so this is not recursive but uses an explicit stack, and with error checking... */
 LISP_API lisp_cell_t *lisp_eval(lisp_t *l, int list, lisp_cell_t *exp, lisp_cell_t *env, int depth) {
 	if (lisp_asserts(l) < 0) { assert(l->Error); return l->Error; }
 	if (lisp_init(l) < 0) { assert(l->Error); return l->Error; }
@@ -430,12 +423,18 @@ again:
 			}
 			exp = lisp_car(l, exp);
 			goto again;
-		} /* TODO: handle (fn x ...) as well as (fn (x) ...) */
+		}
                 lisp_cell_t *proc = lisp_eval(l, 0, op, env, depth + 1);
                 lisp_cell_t *vals = lisp_eval(l, 1, n,  env, depth + 1);
                 if (lisp_type_get(proc) == LISP_FUNCTION) {
 			lisp_cell_t *scope = l->dynamic_scope ? env : lisp_procenv(proc);
-                	env = lisp_extends(l, scope, lisp_procargs(proc), vals);
+			lisp_cell_t *args = lisp_procargs(proc);
+			const int single = lisp_type_get(args) == LISP_SYMBOL;
+			if (single) { 
+				vals = lisp_cons(l, vals, l->Nil);
+				args = lisp_cons(l, args, l->Nil);
+			}
+                	env = lisp_extends(l, scope, args, vals);
 			exp = lisp_proccode(proc);
 			l->gc_stack_used = gc_saved_stack;
 			lisp_gc_stack_add(l, env);
@@ -555,7 +554,6 @@ static int lisp_string_to_number(const char *s, intptr_t *o, int base) {
 	return 0;
 }
 
-#if 1
 LISP_API lisp_cell_t *lisp_read(lisp_t *l, int (*get)(void *param), void *param, int depth) {
 	if (lisp_asserts(l) < 0) return NULL;
 	if (lisp_init(l) < 0) return NULL;
@@ -596,115 +594,6 @@ LISP_API lisp_cell_t *lisp_read(lisp_t *l, int (*get)(void *param), void *param,
 	if (!lisp_string_to_number(t, &n, 10)) return lisp_mkint(l, n);
 	return lisp_intern(l, t);
 }
-#else
-LISP_API lisp_cell_t *lisp_read(lisp_t *l, int (*get)(void *param), void *param, int depth) {
-	enum { BEGIN = 'B', TOKEN = 'T', QUOTE = 'Q', CONS = 'C', DOTTED = '.', POP = 'P', RPOP = 'R', TPOP = 'K', };
-	intptr_t n = 0, sp = 0, state = BEGIN;
-	lisp_cell_t *c = NULL, *r = NULL, *tok = NULL;
-	char *t = NULL;
-again:
-	printf("sp %d st %c c=%p r=%p tok=%p\n", (int)sp, (int)state, c, r, tok);
-	switch (state) {
-	case BEGIN: state = TOKEN; break;
-	case POP:
-		if (!sp) return c;
-		state = l->stack[sp - 1].state;
-		c = l->stack[sp - 1].obj;
-		sp--;
-		break;
-	case RPOP:
-		if (!sp) return c;
-		state = l->stack[sp - 1].state;
-		r = l->stack[sp - 1].obj;
-		sp--;
-		break;
-	case TPOP:
-		if (!sp) return c;
-		state = l->stack[sp - 1].state;
-		tok = l->stack[sp - 1].obj;
-		sp--;
-		break;
-	case TOKEN:
-		state = POP;
-		if (!(t = lisp_token(l, get, param))) return NULL;
-		if (!strcmp(t, ")")) return l->Error;
-		if (!strcmp(t, "(")) {
-			if (!(t = lisp_token(l, get, param))) return NULL;
-			if (!strcmp(t, ")")) {
-				l->stack[sp++] = (lisp_stack_t) { .state = POP, .obj = tok = l->Nil, };
-				break;
-			}
-			if (lisp_buf_putback(l) < 0) return l->Error;
-			lisp_cell_t *p = r;
-			r = lisp_cons(l, l->Nil, l->Nil);
-			//l->stack[sp++] = (lisp_stack_t) { .state = POP,  .obj = c, };
-			//l->stack[sp++] = (lisp_stack_t) { .state = RPOP, .obj = p, };
-			//l->stack[sp++] = (lisp_stack_t) { .state = TPOP, .obj = tok, };
-			l->stack[sp++] = (lisp_stack_t) { .state = CONS, .obj = tok = r, };
-			state = TOKEN;
-			break;
-		}
-		if (!strcmp(t, "'")) { 
-			l->stack[sp++] = (lisp_stack_t) { .state = QUOTE, .obj = tok = lisp_cons(l, l->Quote, lisp_cons(l, l->Nil, l->Nil)), };
-			state = TOKEN;
-			break;
-		}
-		if (!lisp_string_to_number(t, &n, 10)) { 
-			l->stack[sp++] = (lisp_stack_t) { .state = POP, .obj = tok = lisp_mkint(l, n), };
-			break;
-		}
-		l->stack[sp++] = (lisp_stack_t) { .state = POP, .obj = tok = lisp_intern(l, t), };
-		break;
-	case QUOTE:
-		state = POP;
-		r = l->stack[sp].obj;
-		lisp_setcar(l, lisp_cdr(l, r), l->stack[sp + 1].obj);
-		c = r;
-		break;
-	case DOTTED:
-		state = POP;
-		lisp_setcdr(l, r, l->stack[sp + 1].obj);
-		if (!(t = lisp_token(l, get, param))) return NULL;
-		if (strcmp(t, ")")) return l->Error;
-		break;
-	case CONS:
-		state = TOKEN;
-		if (!(t = lisp_token(l, get, param))) return NULL;
-		if (!strcmp(t, ".")) { // TODO: Test (a . b), (a . (b)), etcetera
-			lisp_setcar(l, r, tok);
-			l->stack[sp++] = (lisp_stack_t) { .state = DOTTED, .obj = c, };
-			state = TOKEN;
-			break;
-		}
-		if (!strcmp(t, ")")) {
-			lisp_setcar(l, r, tok);
-			tok = r;
-			state = POP;
-			break;
-		}
-		if (!strcmp(t, "(")) {
-			lisp_buf_putback(l);
-			if (!strcmp(t, ")")) break; // TODO: Test nil
-			l->stack[sp++] = (lisp_stack_t) { .state = CONS, .obj = c, };
-			l->stack[sp++] = (lisp_stack_t) { .state = RPOP, .obj = r, };
-			l->stack[sp++] = (lisp_stack_t) { .state = POP,  .obj = c, };
-			//l->stack[sp++] = (lisp_stack_t) { .state = TPOP, .obj = tok, };
-			break;
-		}
-		lisp_buf_putback(l);
-		lisp_setcar(l, r, tok);
-		lisp_setcdr(l, r, lisp_cons(l, l->Nil, l->Nil));
-		r = lisp_cdr(l, r);
-		l->stack[sp++] = (lisp_stack_t) { .state = CONS, .obj = c, };
-		break;
-	default:
-		l->fatal = 1;
-		return NULL;
-	}
-goto again;
-	return NULL;
-}
-#endif
 
 static int lisp_puts(int (*put)(void *param, int ch), void *param, const char *s) {
 	assert(put);
@@ -739,7 +628,6 @@ static int lisp_print_number(intptr_t n, int (*put)(void *param, int ch), void *
 	return lisp_puts(put, param, lisp_number_to_string(b, n, 10));
 }
 
-#if 0
 LISP_API int lisp_write(lisp_t *l, int (*put)(void *param, int ch), void *param, lisp_cell_t *obj, int depth) {
 	lisp_asserts(l);
 	assert(put);
@@ -795,106 +683,6 @@ fatal:
 	l->fatal = 1;
 	return -1;
 }
-#else
-LISP_API int lisp_write(lisp_t *l, int (*put)(void *param, int ch), void *param, lisp_cell_t *obj) {
-	lisp_asserts(l);
-	assert(put);
-	enum { START = 100, CONS_LOOP, CONS_END, CONS_DOTTED, POP, FUNC_LOOP, FUNC_END, };
-	int state = START, sp = 0;
-	if (lisp_init(l) < 0) return -1;
-start:
-	if (!obj) goto fatal;
-	assert(sp < LISP_MAX_DEPTH); /* We could realloc here */
-	switch (state) {
-	case START:
-		state = lisp_type_get(obj);
-		assert(state < START);
-		if (sp > LISP_MAX_DEPTH - 1) return -1;
-		break;
-	case LISP_CONS:
-		state = CONS_LOOP;
-		if (lisp_puts(put, param, "(") < 0) goto fatal;
-		break;
-	case CONS_LOOP:
-		state = START;
-		l->stack[sp++] = (lisp_stack_t){ .state = CONS_END, .obj = lisp_cdr(l, obj), };
-		obj = lisp_car(l, obj);
-		break;
-	case CONS_END:
-		if (lisp_isnil(l, obj)) {
-			if (lisp_puts(put, param, ") ") < 0) goto fatal;
-			state = POP;
-		} else if (lisp_type_get(obj) != LISP_CONS) {
-			state = START;
-			if (lisp_puts(put, param, ". ") < 0) goto fatal;
-			l->stack[sp++] = (lisp_stack_t){ .state = CONS_DOTTED, .obj = obj, };
-		} else {
-			state = CONS_LOOP;
-		}
-		break;
-	case CONS_DOTTED:
-		state = POP;
-		if (lisp_puts(put, param, ") ") < 0) goto fatal;
-		break;
-	case LISP_FUNCTION:
-		state = START;
-		if (lisp_puts(put, param, "(fn ") < 0) goto fatal;
-		l->stack[sp++] = (lisp_stack_t){ .state = FUNC_LOOP, .obj = lisp_proccode(obj), };
-		obj = lisp_procargs(obj);
-		break;
-	case FUNC_LOOP:
-		state = START;
-		l->stack[sp++] = (lisp_stack_t){ .state = FUNC_END, .obj = lisp_cdr(l, obj), };
-		obj = lisp_car(l, obj);
-		break;
-	case FUNC_END:
-		if (lisp_isnil(l, obj)) {
-			if (lisp_puts(put, param, ") ") < 0) goto fatal;
-			state = POP;
-		} else if (lisp_type_get(obj) != LISP_CONS) {
-			state = START;
-			if (lisp_puts(put, param, ". ") < 0) goto fatal;
-			l->stack[sp++] = (lisp_stack_t){ .state = CONS_DOTTED, .obj = obj, };
-		} else {
-			state = FUNC_LOOP;
-		}
-		break;
-	case LISP_SYMBOL:
-		state = POP;
-		if (lisp_isnil(l, obj)) { 
-			if (lisp_puts(put, param, "() ") < 0) goto fatal;
-			break;
-		}
-		if (lisp_puts(put, param, lisp_strval(obj)) < 0) goto fatal;
-		if (lisp_puts(put, param, " ") < 0) goto fatal;
-		break;
-	case LISP_INTEGER:
-		state = POP;
-		if (lisp_print_number(lisp_intval(obj), put, param) < 0) goto fatal;
-		if (lisp_puts(put, param, " ") < 0) goto fatal;
-		break;
-	case LISP_PRIMITIVE:
-		state = POP;
-		if (lisp_puts(put, param, "PRIMITIVE:") < 0) goto fatal;
-		if (lisp_print_number(lisp_ptrval(obj), put, param) < 0) goto fatal;
-		if (lisp_puts(put, param, ":") < 0) goto fatal;
-		if (lisp_print_number((uintptr_t)lisp_primparam(obj), put, param) < 0) goto fatal;
-		if (lisp_puts(put, param, " ") < 0) goto fatal;
-		break;
-	case POP:
-		if (!sp) return 0;
-		state = l->stack[sp - 1].state;
-		obj = l->stack[sp - 1].obj;
-		sp--;
-		break;
-	default: l->fatal = 1; return -1;
-	}
-goto start;
-fatal:
-	l->fatal = 1;
-	return -1;
-}
-#endif
 
 LISP_API int lisp_function_add(lisp_t *l, const char *symbol, lisp_function_t fn, void *param) {
 	assert(l);
@@ -961,7 +749,6 @@ LISP_API int lisp_init(lisp_t *l) {
 	static const size_t ini = 16;
 	if (!(l->gc_stack = (lisp_cell_t**)lisp_alloc(l, ini * sizeof(*l->gc_stack)))) goto fail;
 	l->gc_stack_allocated = ini;
-	if (!(l->stack = (lisp_stack_t*)lisp_alloc(l, LISP_MAX_DEPTH * sizeof(l->stack)))) goto fail;
 	if (!(l->Nil    = lisp_mksym(l, "nil"))) goto fail;
 	if (!(l->interned = lisp_cons(l, l->Nil, l->Nil))) goto fail;
 	if (!(l->env = lisp_cons(l, lisp_cons(l, l->Nil, l->Nil), l->Nil))) goto fail;
@@ -1003,12 +790,10 @@ LISP_API int lisp_deinit(lisp_t *l) {
 	l->gc = 1;
 	lisp_sweep(l);
 	lisp_free(l, l->gc_stack);
-	lisp_free(l, l->stack);
 	lisp_free(l, l->buf);
 	lisp_free(l, l->bufback);
 	l->gc_stack = NULL;
 	l->gc_stack_allocated = 0;
-	l->stack = NULL;
 	l->buf = NULL;
 	l->bufback = NULL;
 	l->init = 0;
@@ -1027,12 +812,10 @@ LISP_API int lisp_unit_tests(lisp_t *l) {
 #ifndef LISP_CUSTOM_ARENA /* enable custom allocator; smart enough to be dangerous */
 #define LISP_CUSTOM_ARENA (1)
 #endif
-#ifndef LISP_ARENA_SIZE
+
+#ifndef LISP_ARENA_SIZE /* number of allocatable `lisp_node_t` in an arena */
 #define LISP_ARENA_SIZE (4096)
 #endif
-
-static int lisp_put_ch(void *param, int ch) { return fputc(ch, (FILE*)param); }
-static int lisp_get_ch(void *param) { return fgetc((FILE*)param); }
 
 struct lisp_node; /* custom allocator type; enough to store most common allocation type */
 typedef struct lisp_node lisp_node_t;
@@ -1084,7 +867,7 @@ static inline int lisp_node_free(lisp_arena_t *a, void *p) {
 static void *lisp_allocator(void *arena, void *ptr, const size_t oldsz, const size_t newsz) {
 	if (newsz == 0) { if (!lisp_node_free((lisp_arena_t *)arena, ptr)) free(ptr); return NULL; }
 	if (newsz > oldsz) { 
-		if (lisp_node_is((lisp_arena_t*)arena, ptr)) {
+		if (lisp_node_is((lisp_arena_t*)arena, ptr)) { /* move from lisp_node -> realloc */
 			if (newsz <= LISP_MEMBER_SIZE(lisp_node_t, d)) return ptr;
 			void *r = calloc(newsz, 1);
 			memcpy(r, ptr, LISP_MEMBER_SIZE(lisp_node_t, d));
@@ -1098,6 +881,8 @@ static void *lisp_allocator(void *arena, void *ptr, const size_t oldsz, const si
 	return ptr;
 }
 
+static int lisp_put_ch(void *param, int ch) { return fputc(ch, (FILE*)param); }
+static int lisp_get_ch(void *param) { return fgetc((FILE*)param); }
 typedef struct { int (*get)(void *); int (*put)(void *, int ch); void *in, *out; } lisp_io_t;
 
 static lisp_cell_t *lisp_prim_read(lisp_t *l, lisp_cell_t *args, void *param) {
@@ -1113,7 +898,7 @@ static lisp_cell_t *lisp_prim_write(lisp_t *l, lisp_cell_t *args, void *param) {
 	assert(args);
 	assert(param);
 	lisp_io_t *io = (lisp_io_t*)param;
-	return lisp_mkint(l, lisp_write(l, io->put, io->out, args));
+	return lisp_mkint(l, lisp_write(l, io->put, io->out, args, l->depth + 1));
 }
 
 int main(void) {
@@ -1125,7 +910,7 @@ int main(void) {
 	if (lisp_function_add(l, "out", lisp_prim_write, &io) < 0) goto fail;
 	for (lisp_cell_t *c = NULL;(c = lisp_read(l, lisp_get_ch, io.in, 0));) {
 		if (!(c = lisp_eval(l, 0, c, l->env, 0))) goto fail;
-		if (lisp_write(l, lisp_put_ch, io.out, c) < 0) goto fail;
+		if (lisp_write(l, lisp_put_ch, io.out, c, 0) < 0) goto fail;
 		if (fputc('\n', (FILE*)io.out) != '\n') goto fail;
 	}
 	lisp_deinit(l);

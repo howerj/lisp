@@ -63,10 +63,18 @@ interned) but that would add a lot of size to the interpreter.
   cell and the number value of a number. No type checking is done. You can
   define a set of functions that does type checking if needed.
 * To catch an error you can use `(eq '! EXPR)`. 
+* This program has been fuzzed with [American Fuzzy Lop](https://lcamtuf.coredump.cx/afl/)
+  and contains a fair few assertions so it should be fairly robust. Out of
+  memory conditions are also tested for with a custom allocator.
 
 ## Bugs and Limitations
 
-* Maximum recursion depth is set by a compile time macro (>16)
+* Maximum recursion depth is set by a compile time macro (>16). In the commit
+  history is an attempt to convert the reader and writer (the writer was
+  successfully converted) into a state-machine driven function that used an
+  explicit stack instead of the C stack, the code was far more complex however,
+  even though doing this (especially if `lisp_eval` could be converted) would
+  have many benefits.
 * The maximum length of a string or symbol `pow((sizeof(uintptr_t) * 8) - 4, 2) - 1`
   bytes, if you include the NUL terminal symbol to maintain compatibility with
   C strings.

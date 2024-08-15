@@ -3,9 +3,7 @@
 ; howe.r.j.89@gmail.com
 ; Lisp Test Code
 
-
 ; Library Code
-
 (def caar (fn (x) car (car x)))
 (def cadr (fn (x) car (cdr x)))
 (def cdar (fn (x) cdr (car x)))
@@ -17,7 +15,6 @@
 (def id (fn (x) car (cons x ())))
 (def odd? (fn (x) eq 1 (and x 1)))
 (def even? (fn (x) eq 0 (and x 1)))
-
 
 ; Test Functions
 
