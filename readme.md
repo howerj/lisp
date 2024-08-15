@@ -18,7 +18,7 @@ user. The language consists of the following:
   last one.
 * `do`, `(do (cond) exp...)`, loop evaluating "exp" until "cond" is false,
   return last evaluation or nil in case of no evaluations.
-* `fn`, `(fn (args) body...)`, create a new function
+* `fn`, `(fn (args...) body...)` or (fn varg body), create a new function
 * `def`, `(def symbol expr)`, define a new symbol
 * `quote`, `(quote x)`, prevent evaluation of "x"
 * `set`, `(set x y)`, set "x" to "y"
@@ -26,8 +26,8 @@ user. The language consists of the following:
 * `car`, `(cdr '(x y))`, get first element in a cons list
 * `cdr`, `(cdr '(x y))`, get second element in a cons list
 * `type`, `(type 'x)`, get the type of an expression as a number.
-* `add`, `sub`, `and`, `or`, `xor`, `mul`, `div`, `lls`, `lrs`, the
-  arithmetic operators
+* `add`, `sub`, `and`, `or`, `xor`, `mul`, `div`, `mod`, `lls`, `lrs`, `min`,
+  `max` the arithmetic operators
 * `eq`, `neq`, `less`, `leq`, `more`, `meq`, the comparison operators
 * `!`, `(!)`, signal an error condition. This happens on many error
 conditions with no way to tell what caused it. It usually causes any
@@ -63,9 +63,20 @@ interned) but that would add a lot of size to the interpreter.
   cell and the number value of a number. No type checking is done. You can
   define a set of functions that does type checking if needed.
 * To catch an error you can use `(eq '! EXPR)`. 
-* This program has been fuzzed with [American Fuzzy Lop](https://lcamtuf.coredump.cx/afl/)
-  and contains a fair few assertions so it should be fairly robust. Out of
+* This program has been fuzzed with [American Fuzzy Lop](https://lcamtuf.coredump.cx/afl/),
+  tested with Valgrind and contains a fair few assertions so it should be fairly robust. Out of
   memory conditions are also tested for with a custom allocator.
+* Internally, most lisp cells consists of a structure consisting of two or three 
+  pointer sized objects, one value containing a tag value (which contains bits
+  for object type, garbage collection and object length) and the other one or
+  two containing data. A cons cell consists three pointer sized values, a tag and
+  two pointers. Ideally it would contain only two pointers, and there are
+  several ways of doing this, you can either steal bits from the pointer value
+  for tag bits given the assumption that all allocated values are aligned on a
+  machine word size boundary, or keep certain values in special areas of memory
+  (thus anything in one array must be a cons cell, anything in another must be
+  an integer, etcetera). This is not done for maximum portability, but many
+  lisp implementations do things like this in order to improve memory efficiency.
 
 ## Bugs and Limitations
 

@@ -25,7 +25,7 @@ extern "C" {
 #endif
 
 #ifndef LISP_COLLECT_EVERY /* Call garbage collector every X allocations */
-#define LISP_COLLECT_EVERY (0)
+#define LISP_COLLECT_EVERY (1024)
 #endif
 
 #ifndef LISP_EXTERN /* applied to API function declarations */
@@ -345,7 +345,7 @@ static lisp_cell_t *lisp_extends(lisp_t *l, lisp_cell_t *env, lisp_cell_t *syms,
 	return env;
 }
 
-static lisp_cell_t *lisp_extend_top(lisp_t *l, lisp_cell_t *sym, lisp_cell_t *val) {
+static lisp_cell_t *lisp_define(lisp_t *l, lisp_cell_t *sym, lisp_cell_t *val) {
 	lisp_asserts(l);
 	if (!sym || !val) { l->fatal = 1; return l->Error; }
 	assert(sym);
@@ -404,7 +404,7 @@ again:
 		} else if (op == l->Define) {
 			l->gc_stack_used = gc_saved_stack;
 			lisp_cell_t *t = lisp_eval(l, 0, lisp_car(l, lisp_cdr(l, n)), env, depth + 1);
-			return lisp_gc_stack_add(l, lisp_extend_top(l, lisp_car(l, n), t));
+			return lisp_gc_stack_add(l, lisp_define(l, lisp_car(l, n), t));
 		} else if (op == l->Set) {
 			lisp_cell_t *c = lisp_assoc(l, lisp_car(l, n), env);
 			lisp_cell_t *v = lisp_eval(l, 0, lisp_car(l, lisp_cdr(l, n)), env, depth + 1);
@@ -426,7 +426,7 @@ again:
 		}
                 lisp_cell_t *proc = lisp_eval(l, 0, op, env, depth + 1);
                 lisp_cell_t *vals = lisp_eval(l, 1, n,  env, depth + 1);
-                if (lisp_type_get(proc) == LISP_FUNCTION) {
+                if (lisp_type_get(proc) == LISP_FUNCTION) { /* TODO: Error check; too many args */
 			lisp_cell_t *scope = l->dynamic_scope ? env : lisp_procenv(proc);
 			lisp_cell_t *args = lisp_procargs(proc);
 			const int single = lisp_type_get(args) == LISP_SYMBOL;
@@ -453,9 +453,9 @@ again:
 			return lisp_cdr(l, t);
 		}
 		break;
+	default: /* unknown types return self */
 	case LISP_INTEGER: case LISP_FUNCTION: case LISP_PRIMITIVE:
 		return exp;
-	default: l->fatal = 1; return NULL; // TODO: Custom types -> Return Self
 	}
 	return exp;
 }
@@ -676,7 +676,10 @@ LISP_API int lisp_write(lisp_t *l, int (*put)(void *param, int ch), void *param,
 		if (lisp_puts(put, param, " ") < 0) goto fatal;
 		break;
 	}
-	default: goto fatal;
+	default: {
+		if (lisp_puts(put, param, "UNKNOWN:") < 0) goto fatal;
+		if (lisp_print_number(lisp_ptrval(obj), put, param) < 0) goto fatal;
+	}
 	}
 	return 0;
 fatal:
@@ -690,7 +693,7 @@ LISP_API int lisp_function_add(lisp_t *l, const char *symbol, lisp_function_t fn
 	assert(fn);
 	lisp_cell_t *name = lisp_intern(l, symbol), *prim = lisp_mkprimop(l, fn, param);
 	if (!name || !prim) return -1;
-	return lisp_extend_top(l, name, prim) ? 0 : -1;
+	return lisp_define(l, name, prim) ? 0 : -1;
 }
 
 static lisp_cell_t *lisp_prim_arith(lisp_t *l, lisp_cell_t *args, void *param) {
@@ -700,21 +703,23 @@ static lisp_cell_t *lisp_prim_arith(lisp_t *l, lisp_cell_t *args, void *param) {
 	intptr_t n = lisp_compval(lisp_car(l, args)), op = (intptr_t)param;
 	for (args = lisp_cdr(l, args); lisp_ispropercons(l, args); args = lisp_cdr(l, args)) {
 		const intptr_t v = lisp_compval(lisp_car(l, args));
-		switch (op) { /* mod, min and max would also make good operators */
+		switch (op) { /* unsigned comparison operators are missing */
 		case 1: n -= v; break;
 		case 2: n &= v; break;
 		case 3: n |= v; break;
 		case 4: n ^= v; break;
 		case 5: n *= v; break;
 		case 6: if (!v) return l->Error; n /= v; break;
-		case 7: n <<= v; break;
-		case 8: n >>= v; break;
+		case 7: if (!v) return l->Error; n %= v; break;
+		case 8: n <<= v; break;
+		case 9: n >>= v; break;
+		case 10: n = n < v ? n : v; break;
+		case 11: n = n > v ? n : v; break;
 		case 0: default: n += v; break;
 		}
 	}
 	return lisp_mkint(l, n);
 }
-
 
 static lisp_cell_t *lisp_prim_comp(lisp_t *l, lisp_cell_t *args, void *param) {
 	if (lisp_asserts(l) < 0) return NULL;
@@ -753,7 +758,7 @@ LISP_API int lisp_init(lisp_t *l) {
 	if (!(l->interned = lisp_cons(l, l->Nil, l->Nil))) goto fail;
 	if (!(l->env = lisp_cons(l, lisp_cons(l, l->Nil, l->Nil), l->Nil))) goto fail;
 	if (!(l->Tee    = lisp_intern(l, "t"))) goto fail;
-	if (!(lisp_extend_top(l, l->Tee, l->Tee))) goto fail;
+	if (!(lisp_define(l, l->Tee, l->Tee))) goto fail;
 	if (!(l->Quote  = lisp_intern(l, "quote"))) goto fail; /* these definitions could be static */
 	if (!(l->If     = lisp_intern(l, "if"))) goto fail;
 	if (!(l->Loop   = lisp_intern(l, "do"))) goto fail;
@@ -766,7 +771,7 @@ LISP_API int lisp_init(lisp_t *l) {
 	if (lisp_function_add(l, "car", lisp_prim_car, NULL) < 0) goto fail;
 	if (lisp_function_add(l, "cdr", lisp_prim_cdr, NULL) < 0) goto fail;
 	if (lisp_function_add(l, "type", lisp_prim_type, NULL) < 0) goto fail;
-	static const char *arith[] = { "add", "sub", "and", "or", "xor", "mul", "div", "lls", "lrs", };
+	static const char *arith[] = { "add", "sub", "and", "or", "xor", "mul", "div", "mod", "lls", "lrs", "min", "max", };
 	for (size_t i = 0; i < LISP_NELEMS(arith); i++)
 		if (lisp_function_add(l, arith[i], lisp_prim_arith, (void*)i) < 0)
 			goto fail;
@@ -820,11 +825,11 @@ LISP_API int lisp_unit_tests(lisp_t *l) {
 struct lisp_node; /* custom allocator type; enough to store most common allocation type */
 typedef struct lisp_node lisp_node_t;
 struct lisp_node { uintptr_t d[3]; lisp_node_t *next; };
-typedef struct { lisp_node_t n[LISP_ARENA_SIZE]; lisp_node_t *head; int ini; } lisp_arena_t;
+typedef struct { lisp_node_t n[LISP_ARENA_SIZE]; lisp_node_t *head; int ini, fail_after_n_allocs, allocs; } lisp_arena_t;
 
 static inline lisp_node_t *lisp_node_alloc(lisp_arena_t *a, size_t sz) {
 	if (!LISP_CUSTOM_ARENA) return NULL;
-	assert(a);
+	if (!a) return NULL;
 	lisp_node_t *n = a->n;
 	if (!a->ini) {
 		a->head = n;
@@ -846,14 +851,14 @@ static inline lisp_node_t *lisp_node_alloc(lisp_arena_t *a, size_t sz) {
 }
 
 static inline int lisp_node_is(lisp_arena_t *a, void *p) {
-	assert(a);
+	if (!a) return 0;
 	lisp_node_t *f = (lisp_node_t *)p, *n = a->n;
 	return f >= n && f <= &n[LISP_ARENA_SIZE - 1];
 }
 
 static inline int lisp_node_free(lisp_arena_t *a, void *p) {
 	if (!LISP_CUSTOM_ARENA) return 0;
-	assert(a);
+	if (!a) return 0;
 	assert(a->ini);
 	lisp_node_t *f = (lisp_node_t *)p;
 	if (lisp_node_is(a, p)) {
@@ -867,14 +872,16 @@ static inline int lisp_node_free(lisp_arena_t *a, void *p) {
 static void *lisp_allocator(void *arena, void *ptr, const size_t oldsz, const size_t newsz) {
 	if (newsz == 0) { if (!lisp_node_free((lisp_arena_t *)arena, ptr)) free(ptr); return NULL; }
 	if (newsz > oldsz) { 
-		if (lisp_node_is((lisp_arena_t*)arena, ptr)) { /* move from lisp_node -> realloc */
+		lisp_arena_t *a = (lisp_arena_t*)arena;
+		if (a && a->fail_after_n_allocs && a->allocs++ > a->fail_after_n_allocs) return NULL;
+		if (lisp_node_is(a, ptr)) { /* move from lisp_node -> realloc */
 			if (newsz <= LISP_MEMBER_SIZE(lisp_node_t, d)) return ptr;
 			void *r = calloc(newsz, 1);
 			memcpy(r, ptr, LISP_MEMBER_SIZE(lisp_node_t, d));
-			lisp_node_free((lisp_arena_t*)arena, ptr);
+			lisp_node_free(a, ptr);
 			return r;
 		}
-		void *r = lisp_node_alloc((lisp_arena_t *)arena, newsz);
+		void *r = lisp_node_alloc(a, newsz);
 		if (r) return r;
 		return realloc(ptr, newsz); /* realloc fallback */
 	}
@@ -902,7 +909,7 @@ static lisp_cell_t *lisp_prim_write(lisp_t *l, lisp_cell_t *args, void *param) {
 }
 
 int main(void) {
-	lisp_arena_t arena = { .ini = 0, };
+	lisp_arena_t arena = { .ini = 0, .fail_after_n_allocs = 0, };
 	lisp_t lisp = { .alloc = lisp_allocator, .arena = &arena, }, *l = &lisp;
 	lisp_io_t io = { .get = lisp_get_ch, .put = lisp_put_ch, .in = stdin, .out = stdout, };
 	if (lisp_init(l) < 0) return 1;
