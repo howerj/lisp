@@ -60,6 +60,19 @@ static lisp_cell_t *lisp_prim_fatal(lisp_t *l, lisp_cell_t *args, void *param) {
 	return l->Error;
 }
 
+static lisp_cell_t *lisp_prim_put(lisp_t *l, lisp_cell_t *args, void *param) {
+	FILE *out = param;
+	lisp_cell_t *v = lisp_car(l, args);
+	const intptr_t p = lisp_ptrval(v) & 255;
+	return fputc(p, out) != p ? l->Error: v;
+}
+
+static lisp_cell_t *lisp_prim_get(lisp_t *l, lisp_cell_t *args, void *param) {
+	FILE *in = param;
+	(void)args;
+	return lisp_mkint(l, fgetc(in));
+}
+
 int lisp_extend(lisp_t *l) {
 	if (lisp_asserts(l) < 0) return -1;
 	if (lisp_function_add(l, "assoc", lisp_prim_assoc, NULL) < 0) goto fail;
@@ -70,6 +83,8 @@ int lisp_extend(lisp_t *l) {
 	if (lisp_function_add(l, "scope", lisp_prim_scope, NULL) < 0) goto fail;
 	if (lisp_function_add(l, "depth", lisp_prim_depth, NULL) < 0) goto fail;
 	if (lisp_function_add(l, "fatal", lisp_prim_fatal, NULL) < 0) goto fail;
+	if (lisp_function_add(l, "put", lisp_prim_put, stdout) < 0) goto fail;
+	if (lisp_function_add(l, "get", lisp_prim_get, stdin) < 0) goto fail;
 	return 0;
 fail:
 	l->fatal = 1;

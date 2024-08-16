@@ -387,7 +387,7 @@ again:
 			goto again;
 		} else if (op == l->Loop) {
 			lisp_cell_t *last = l->Nil, *cond = lisp_car(l, n);
-			exp = lisp_cdr(l, n);
+			exp = lisp_cdr(l, n); /* Add for implicit progn: lisp_cons(l, l->Progn, lisp_cdr(l, n)); */
 			gc_saved_stack = l->gc_stack_used;
 			for (;last != l->Error;) {
 				lisp_cell_t *res = lisp_eval(l, 0, cond, env, depth + 1);
@@ -435,7 +435,7 @@ again:
 				args = lisp_cons(l, args, l->Nil);
 			}
                 	env = lisp_extends(l, scope, args, vals);
-			exp = lisp_proccode(proc);
+			exp = lisp_proccode(proc); /* Add for implicit progn: lisp_cons(l, l->Progn, lisp_proccode(proc)); */
 			l->gc_stack_used = gc_saved_stack;
 			lisp_gc_stack_add(l, env);
 			lisp_gc_stack_add(l, exp);

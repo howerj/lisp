@@ -60,8 +60,9 @@ interned) but that would add a lot of size to the interpreter.
 ## Notes
 
 * Arithmetic operates on the pointer value of a symbol, a function, or a cons
-  cell and the number value of a number. No type checking is done. You can
-  define a set of functions that does type checking if needed.
+  cell and the number value of a number. No type checking is done deliberately
+  to make this as flexible as possible. You can define a set of functions that 
+  does type checking if needed.
 * To catch an error you can use `(eq '! EXPR)`. 
 * This program has been fuzzed with [American Fuzzy Lop](https://lcamtuf.coredump.cx/afl/),
   tested with Valgrind and contains a fair few assertions so it should be fairly robust. Out of
@@ -77,6 +78,17 @@ interned) but that would add a lot of size to the interpreter.
   (thus anything in one array must be a cons cell, anything in another must be
   an integer, etcetera). This is not done for maximum portability, but many
   lisp implementations do things like this in order to improve memory efficiency.
+* Adding [fexprs](https://en.wikipedia.org/wiki/Fexpr), with a new `lambda`
+  for them, would be much easier to add than macros, although less useful. It
+  is basically a function that does not evaluate its arguments.
+* There are many things "missing" from this project in an effort to keep it
+  small and simple, no prompt, colorization, command line options, command
+  line history (use [rlwrap](https://linux.die.net/man/1/rlwrap) or integrate
+  [linenoise](https://github.com/antirez/linenoise) yourself), environment
+  variables to control options, and other niceties.
+* [klisp](http://t3x.org/klisp) is a tiny public domain lisp with more 
+  functionality (although it has other limitations) that concepts could be
+  borrowed from, specifically around macros.
 
 ## Bugs and Limitations
 
@@ -96,10 +108,14 @@ interned) but that would add a lot of size to the interpreter.
 * Floating point numbers and strings are missing as types. Adding these would
   make the core interpreter much more useful, with most of the functionality
   for manipulating these types ending up as extensions.
+* The system lacks image files, implementing them would be serializing
+  pointers (which can be avoided by using indexes instead), instead
+  serialization could be achieved by reading and writing s-expressions to disk
+  instead.
 
 # References
 
 * <https://justine.lol/sectorlisp2/>
 * <https://www.lispmachine.net/books/LISP_1.5_Programmers_Manual.pdf>
 * <https://en.wikipedia.org/wiki/Lisp_(programming_language)>
-
+* <http://t3x.org/klisp>
