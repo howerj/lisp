@@ -10,7 +10,7 @@ written in C structured as a [header-only library](https://en.wikipedia.org/wiki
 that is extensible by the user. It is minimalistic but usable (as an embedded
 lisp).
 
-user. The language consists of the following:
+The language consists of the following built in functions:
 
 * `if`, `(if cond exp1 exp2)`, if "cond" is true evaluate and return "exp1"
   else "exp2".
