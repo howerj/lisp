@@ -56,14 +56,14 @@ typedef struct gc_list { lisp_cell_t *ref; struct gc_list *next; } lisp_gc_list_
 struct lisp { /* Should be opaque, do not mess with the internals */
 	void *(*alloc)(void *arena, void *ptr, size_t oldsz, size_t newsz);
 	void *arena;
-	lisp_cell_t *interned /* interned symbols */, *env /* top level environment */,
+	lisp_cell_t *interned /* interned symbols */, *env /* top level environment */, *current /* current env */,
 		    **gc_stack, /* garbage collection stack used in eval */
 		    *Nil, *Tee, *Fn, *Quote, *If, *Loop, *Define, *Set, *Progn, *Error;
 	lisp_gc_list_t *gc_head; /* list of all allocated cells */
 	int ungetch /* single character unget buffer */, depth /* saved recursion depth for eval */;
 	char *buf, *bufback; /* used to store symbols/strings whilst parsing */
 	size_t buf_used, buf_size, gc_stack_allocated, gc_stack_used, gc_collect;
-	unsigned fatal: 1, gc: 1 /* gc on/off*/, dynamic_scope: 1, init: 1, unget: 1, putback: 1 /* token put back */;
+	unsigned fatal: 1, gc: 1 /* gc on/off*/, dynamic_scope: 1, add_progn: 1, init: 1, unget: 1, putback: 1 /* token put back */;
 };
 
 LISP_EXTERN int lisp_asserts(lisp_t *l);
@@ -131,6 +131,7 @@ LISP_API int lisp_asserts(lisp_t *l) {
 	assert(l);
 	assert(l->alloc);
 	lisp_mutual(l->gc_stack, l->gc_stack_allocated);
+	lisp_implies(l->buf_used, l->buf_size);
 	if (l->init) {
 		assert(l->interned); assert(l->env); 
 		assert(l->Nil);      assert(l->Tee); 
@@ -178,17 +179,17 @@ static int lisp_free(lisp_t *l, void *ptr) {
 static lisp_cell_t *lisp_gc_stack_add(lisp_t * l, lisp_cell_t *op) {
 	lisp_asserts(l);
 	if (lisp_type_get(op) == LISP_SYMBOL) return op; /* should be interned, no need to add yet again */
-	if (l->gc_stack_used)
+	if (l->gc_stack_used) /* prevent double adding */
 		if (l->gc_stack[l->gc_stack_used - 1] == op)
 			return op;
-	if (l->gc_stack_used++ > l->gc_stack_allocated - 1) {
+	if ((l->gc_stack_used + 1) > l->gc_stack_allocated - 1) {
 		l->gc_stack_allocated = l->gc_stack_used * 2;
 		if (l->gc_stack_allocated < l->gc_stack_used) goto fatal;
 		lisp_cell_t **olist = (lisp_cell_t**)lisp_realloc(l, l->gc_stack, l->gc_stack_allocated * sizeof(*l->gc_stack));
 		if (!olist) goto fatal;
 		l->gc_stack = olist;
 	}
-	l->gc_stack[l->gc_stack_used - 1] = op;	/* anything reachable in here is not freed */
+	l->gc_stack[l->gc_stack_used++] = op; /* anything reachable in here is not freed */
 	return op;
 fatal:
 	l->fatal = 1;
@@ -340,8 +341,8 @@ static lisp_cell_t *lisp_extends(lisp_t *l, lisp_cell_t *env, lisp_cell_t *syms,
 	assert(vals);
 	for (; lisp_iscons(env) && lisp_iscons(vals); syms = lisp_cdr(l, syms), vals = lisp_cdr(l, vals))
 		env = lisp_extend_env(l, env, lisp_car(l,syms), lisp_car(l, vals));
-	if (!lisp_isnil(l, syms))
-		env = lisp_extend_env(l, env, syms, vals);
+	if (!lisp_isnil(l, syms) || !lisp_isnil(l, vals))
+		return l->Error;
 	return env;
 }
 
@@ -387,7 +388,7 @@ again:
 			goto again;
 		} else if (op == l->Loop) {
 			lisp_cell_t *last = l->Nil, *cond = lisp_car(l, n);
-			exp = lisp_cdr(l, n); /* Add for implicit progn: lisp_cons(l, l->Progn, lisp_cdr(l, n)); */
+			exp = l->add_progn ? lisp_cons(l, l->Progn, lisp_cdr(l, n)) : lisp_cdr(l, n);
 			gc_saved_stack = l->gc_stack_used;
 			for (;last != l->Error;) {
 				lisp_cell_t *res = lisp_eval(l, 0, cond, env, depth + 1);
@@ -426,7 +427,7 @@ again:
 		}
                 lisp_cell_t *proc = lisp_eval(l, 0, op, env, depth + 1);
                 lisp_cell_t *vals = lisp_eval(l, 1, n,  env, depth + 1);
-                if (lisp_type_get(proc) == LISP_FUNCTION) { /* TODO: Error check; too many args */
+                if (lisp_type_get(proc) == LISP_FUNCTION) {
 			lisp_cell_t *scope = l->dynamic_scope ? env : lisp_procenv(proc);
 			lisp_cell_t *args = lisp_procargs(proc);
 			const int single = lisp_type_get(args) == LISP_SYMBOL;
@@ -435,13 +436,15 @@ again:
 				args = lisp_cons(l, args, l->Nil);
 			}
                 	env = lisp_extends(l, scope, args, vals);
-			exp = lisp_proccode(proc); /* Add for implicit progn: lisp_cons(l, l->Progn, lisp_proccode(proc)); */
+			exp = l->add_progn ? lisp_cons(l, l->Progn, lisp_proccode(proc)) : lisp_proccode(proc);
+			if (l->Error == env) return l->Error;
 			l->gc_stack_used = gc_saved_stack;
 			lisp_gc_stack_add(l, env);
 			lisp_gc_stack_add(l, exp);
                 	goto again;
                 }
 		l->depth = depth;
+		l->current = env;
                 if (lisp_type_get(proc) == LISP_PRIMITIVE) /* N.B. we could add an `env` parameter to all primitives */
                 	return lisp_primop(proc)(l, vals, lisp_primparam(proc));
 		return l->Error;
@@ -464,7 +467,7 @@ static int lisp_buf_add(lisp_t *l, int ch) {
 	if (lisp_asserts(l) < 0) return -1;
 	if ((l->buf_used + 2) > l->buf_size) {
 		if ((l->buf_size * 2ull) < l->buf_size) goto fatal;
-		l->buf_size = l->buf_size ? l->buf_size * 2ull : 128;
+		l->buf_size = l->buf_size ? l->buf_size * 2ull : sizeof(lisp_t*);
 		if (!(l->buf = (char*)lisp_realloc(l, l->buf, l->buf_size))) goto fatal;
 		if (!(l->bufback = (char*)lisp_realloc(l, l->bufback, l->buf_size))) goto fatal;
 	}

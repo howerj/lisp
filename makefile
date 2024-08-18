@@ -26,7 +26,7 @@ extend: extend.o lisp.h makefile
 	${CC} ${CFLAGS} $< -o $@
 
 extension: extend
-	./extend
+	${DBG} cat lisp.lsp - | ./extend
 
 clean:
 	git clean -dffx

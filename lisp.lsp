@@ -13,7 +13,7 @@
   (def cadr (fn (x) car (cdr x)))
   (def cdar (fn (x) cdr (car x)))
   (def cddr (fn (x) cdr (cdr x)))
-  (def atom (fn (x) eq (type x) (type (cons nil nil))))
+  (def atom (fn (x) neq (type x) (type (cons nil nil))))
   (def len (fn (l) if l (add 1 (len (cdr l))) 0))
   (def not (fn (x) if x nil t))
   (def null (fn (x) if x nil t))
@@ -63,5 +63,9 @@
 ; Extension only functions / tests
 ; (eval '(add 1 2) (env))
 ; (evlis '(add 1 2) (env))
+
+; (def reverse (fn (x) if (atom x) x (cons (reverse (cdr x)) (reverse (car x))))) 
+
+
 
 
