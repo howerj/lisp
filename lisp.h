@@ -342,7 +342,7 @@ static lisp_cell_t *lisp_extends(lisp_t *l, lisp_cell_t *env, lisp_cell_t *syms,
 	assert(vals);
 	for (; lisp_iscons(env) && lisp_iscons(vals); syms = lisp_cdr(l, syms), vals = lisp_cdr(l, vals))
 		env = lisp_extend_env(l, env, lisp_car(l,syms), lisp_car(l, vals));
-	if (!lisp_isnil(l, syms) || !lisp_isnil(l, vals))
+	if (!lisp_isnil(l, syms) || !lisp_isnil(l, vals)) // TODO: Handle (x y . z)
 		return l->Error;
 	return env;
 }
@@ -415,12 +415,20 @@ again:
 			return v;
 		} else if (op == l->Quote || op == l->Unquote || op == l->Splice) {
 			return lisp_car(l, n);
-		} else if (op == l->Quasi) { // TODO: Implement splice
+		} else if (op == l->Quasi) { // TODO: Fewer cons cells
 			exp = lisp_car(l, lisp_cdr(l, exp));
-			lisp_cell_t *head = exp;
-			for (;!lisp_isnil(l, exp) && exp != l->Error; exp = lisp_cdr(l, exp))
+			lisp_cell_t *head = exp, *prev = exp;
+			for (;!lisp_isnil(l, exp) && exp != l->Error; prev = exp, exp = lisp_cdr(l, exp))
 				if (lisp_car(l, lisp_car(l, exp)) == l->Unquote) {
 					lisp_setcar(l, exp, lisp_eval(l, 0, lisp_car(l, lisp_cdr(l, lisp_car(l, exp))), env, depth + 1));
+				} else if (lisp_car(l, lisp_car(l, exp)) == l->Splice) { // TODO: Better error checking
+					lisp_cell_t *v = lisp_eval(l, 0, lisp_car(l, lisp_cdr(l, lisp_car(l, exp))), env, depth + 1);
+					lisp_cell_t *hv = v;
+					for (;!lisp_isnil(l, lisp_cdr(l, v)) && v != l->Error; v = lisp_cdr(l, v))
+						;
+					lisp_setcdr(l, prev, hv);
+					exp = lisp_cdr(l, exp);
+					lisp_setcdr(l, v, exp);
 				} else {
 					lisp_setcar(l, exp, lisp_eval(l, 0, lisp_cons(l, l->Quasi, lisp_cons(l, lisp_car(l, exp), l->Nil)), env, depth + 1));
 				}
@@ -609,6 +617,7 @@ LISP_API lisp_cell_t *lisp_read(lisp_t *l, int (*get)(void *param), void *param,
 		if (!(t = lisp_token(l, get, param))) return NULL;
 		if (!strcmp(t, "@"))
 			return lisp_cons(l, l->Splice, lisp_cons(l, lisp_read(l, get, param, depth + 1), l->Nil));
+		if (lisp_buf_putback(l) < 0) return l->Error;
 		return lisp_cons(l, l->Unquote, lisp_cons(l, lisp_read(l, get, param, depth + 1), l->Nil));
 	}
 	if (!lisp_string_to_number(t, &n, 10)) return lisp_mkint(l, n);
@@ -928,7 +937,7 @@ static lisp_cell_t *lisp_prim_write(lisp_t *l, lisp_cell_t *args, void *param) {
 	assert(args);
 	assert(param);
 	lisp_io_t *io = (lisp_io_t*)param;
-	return lisp_mkint(l, lisp_write(l, io->put, io->out, args, l->depth + 1));
+	return lisp_mkint(l, lisp_write(l, io->put, io->out, lisp_car(l, args), l->depth + 1));
 }
 
 int main(void) {

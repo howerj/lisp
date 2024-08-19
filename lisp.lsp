@@ -13,11 +13,13 @@
   (def cadr (fn (x) car (cdr x)))
   (def cdar (fn (x) cdr (car x)))
   (def cddr (fn (x) cdr (cdr x)))
-  (def atom (fn (x) neq (type x) (type (cons nil nil))))
-  (def len (fn (l) if l (add 1 (len (cdr l))) 0))
   (def not (fn (x) if x nil t))
+  (def atom (fn (x) neq (type x) (type (cons nil nil))))
+  (def cons? (fn (x) not (atom x)))
+  (def error? (fn (x) eq '! x))
+  (def len (fn (l) if (cons? l) (add 1 (len (cdr l))) 0))
   (def null (fn (x) if x nil t))
-  (def id (fn (x) car (cons x ())))
+  (def id (fn (x) car (cons x nil)))
   (def list (fn _ id _))
   (def odd? (fn (x) eq 1 (and x 1)))
   (def even? (fn (x) eq 0 (and x 1)))
@@ -29,8 +31,6 @@
   'ok)
 
 ; Test Functions
-;
-
 (pgn
   (def ok t)
   (def test (fn (n v) if (neq n v) (set ok '!) ok))
@@ -49,23 +49,38 @@
          n 0)))
   (test (len '(1 2 3 4 5)) 5)
   (test (fac 6) 720)
-  (def + (fn (x y) add x y))
-  (test (+ 1 2) 3)
   (test ((fn (x) add x x) 16) 32)
   (test ((fn (x) mul x x) 16) 256)
   (test (odd? 1) t)
   (test (odd? 2) nil)
   (test (odd? 3) t)
   (test (odd? 4) nil)
-  (test (cons '(a b c (d e f)) 'x) '((a b c (d e f)) . x))
-  (if ok 'ok ok))
+  (if (neq ok '!) 'ok ok))
+
 
 ; Extension only functions / tests
 ; (eval '(add 1 2) (env))
 ; (evlis '(add 1 2) (env))
-
 ; (def reverse (fn (x) if (atom x) x (cons (reverse (cdr x)) (reverse (car x))))) 
+; (def one 1)
+; (def inc (eval @(fn (_) add _ ,one) (env)))
+; @(1 2 ,(add 3 4))
+; @(a b ,ok)
+; @(1 2 ,(list 3) 4)
+; @(1 2 ,@(list 3) 4)
+; @(1 2 ,@(list 3 4) 5)
+; @(1 2 ,@(in) 5)
+;
+; (def apply (fn (func args) eval (cons func args)))
+; (def + (fn _ apply add _))
+; (def * (fn _ apply mul _))
+; (def / (fn _ apply div _))
+; (def - (fn _ apply sub _))
+; (def = (fn _ apply eq _))
+; (+ 2 3 4)
 
-
-
+; (def nl (fn () put 10))
+; (def space (fn () put 32))
+; (def prompt (fn () pgn (nl) (put '>) (space) nil))
+; (def repl (fn () do t pgn (prompt) (out (eval (in)))))
 
