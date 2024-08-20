@@ -19,9 +19,12 @@ The language consists of the following built in functions:
 * `do`, `(do (cond) exp...)`, loop evaluating "exp" until "cond" is false,
   return last evaluation or nil in case of no evaluations.
 * `fn`, `(fn (args...) body...)` or (fn varg body), create a new function
-* `def`, `(def symbol expr)`, define a new symbol
+* `def`, `(def symbol expr)`, define a new symbol, adding a new symbol and
+  not replacing any previous definitions. 
 * `quote`, `(quote x)`, prevent evaluation of "x"
-* `set`, `(set x y)`, set "x" to "y"
+* `set`, `(set x y)`, set "x" to "y", creating "x" if it does not exist, 
+  `(set x)` can be used to check if the symbol exists. `(set x y nil)` can
+  be used to perform a set in the top level environment.
 * `cons`, `(cons 'x 'y)`, form a new node
 * `car`, `(cdr '(x y))`, get first element in a cons list
 * `cdr`, `(cdr '(x y))`, get second element in a cons list
@@ -39,6 +42,15 @@ And some extra functions defined in `main()` that are reliant on `<stdio.h>`:
 
 * `in`, `(in)`, read in an expression from input
 * `out`, `(out 'x)`, write an expression to output
+
+Some syntax:
+
+* +/- 0...9 -> Numbers
+* Symbols are pretty much anything apart from a number and "',@()".
+* () -> Nil
+* 'x -> (quote x)
+* Quasi-quoting is supported, e.g. `(def x 1)  @(x ,x)` returns `(x 1)`. ",@"
+  is also supported to splice in lists.
 
 The C API consists of many `static inline` helper functions, some structures
 which ideally would be opaque but are not because of the nature of the library,
@@ -97,7 +109,10 @@ interned) but that would add a lot of size to the interpreter.
   successfully converted) into a state-machine driven function that used an
   explicit stack instead of the C stack, the code was far more complex however,
   even though doing this (especially if `lisp_eval` could be converted) would
-  have many benefits.
+  have many benefits. If `lisp_eval` were to be converted to use a
+  state-machine and an explicit stack we could yield and restore from the
+  lisp interpreter, and support much larger recursion depths. It would also
+  help in closure formation.
 * The maximum length of a string or symbol `pow((sizeof(uintptr_t) * 8) - 4, 2) - 1`
   bytes, if you include the NUL terminal symbol to maintain compatibility with
   C strings.

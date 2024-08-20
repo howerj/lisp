@@ -95,8 +95,8 @@ static inline int lisp_iscons(lisp_cell_t *c) { assert(c); return lisp_type_get(
 static inline int lisp_isnil(lisp_t *l, lisp_cell_t *c) { lisp_asserts(l); if (!c) { l->fatal = 1; return 0; } return c == l->Nil; }
 static inline lisp_cell_t *lisp_car(lisp_t *l, lisp_cell_t *cons) { if (l->fatal || !cons || !lisp_iscons(cons)) return l->Error; return cons->t[0].l ? cons->t[0].l : l->Error; }
 static inline lisp_cell_t *lisp_cdr(lisp_t *l, lisp_cell_t *cons) { if (l->fatal || !cons || !lisp_iscons(cons)) return l->Error; return cons->t[1].l ? cons->t[1].l : l->Error; }
-static inline void lisp_setcar(lisp_t *l, lisp_cell_t *cons, lisp_cell_t *car) { assert(l); if (l->fatal || !cons || !lisp_iscons(cons) || !car) return; cons->t[0].l = car; }
-static inline void lisp_setcdr(lisp_t *l, lisp_cell_t *cons, lisp_cell_t *cdr) { assert(l); if (l->fatal || !cons || !lisp_iscons(cons) || !cdr) return; cons->t[1].l = cdr; }
+static inline lisp_cell_t *lisp_setcar(lisp_t *l, lisp_cell_t *cons, lisp_cell_t *car) { assert(l); if (l->fatal || !cons || !lisp_iscons(cons) || !car) return l->Error; return cons->t[0].l = car; }
+static inline lisp_cell_t *lisp_setcdr(lisp_t *l, lisp_cell_t *cons, lisp_cell_t *cdr) { assert(l); if (l->fatal || !cons || !lisp_iscons(cons) || !cdr) return l->Error; return cons->t[1].l = cdr; }
 static inline intptr_t lisp_intval(lisp_cell_t *c) { assert(c); assert(lisp_type_get(c) == LISP_INTEGER); return c->t[0].n; }
 static inline intptr_t lisp_ptrval(lisp_cell_t *c) { assert(c); return c->t[0].n; }
 static inline intptr_t lisp_compval(lisp_cell_t *c) { assert(c); return lisp_type_get(c) == LISP_INTEGER ? lisp_ptrval(c) : (intptr_t)c; }
@@ -143,7 +143,6 @@ LISP_API int lisp_asserts(lisp_t *l) {
 		assert(l->Quasi);    assert(l->gc_stack); /* not explicitly initialized, it should be non-null though */
 	}
 	/*assert(l->gc_stack_used < l->gc_stack_allocated);*/
-	/*assert(l->init);*/
 	return l->fatal ? -1 : 0;
 }
 
@@ -162,9 +161,9 @@ static void *lisp_realloc(lisp_t *l, void *ptr, size_t sz) {
 
 static void *lisp_alloc(lisp_t *l, size_t sz) {
 	lisp_asserts(l); 
-	void *r = lisp_realloc(l, NULL, sz);
+	void *r = lisp_realloc(l, NULL, sz); /* We could store allocation information in `lisp_t` for analysis */
 	if (!r) {
-		l->fatal = 1;
+		l->fatal = 1; /* Should already be set in this case */
 		return NULL;
 	}
 	return memset(r, 0, sz);
@@ -302,7 +301,7 @@ static int lisp_sweep(lisp_t * l) {
 		if (lisp_gc_get(v->ref)) {
 			p = &v->next;
 			lisp_gc_set(v->ref, 0);
-		} else {
+		} else { /* Storing GC information in `lisp_t` would be useful for analysis */
 			*p = v->next;
 			lisp_free(l, v->ref);
 			lisp_free(l, v);
@@ -340,19 +339,21 @@ static lisp_cell_t *lisp_extends(lisp_t *l, lisp_cell_t *env, lisp_cell_t *syms,
 	assert(env);
 	assert(syms);
 	assert(vals);
-	for (; lisp_iscons(env) && lisp_iscons(vals); syms = lisp_cdr(l, syms), vals = lisp_cdr(l, vals))
-		env = lisp_extend_env(l, env, lisp_car(l,syms), lisp_car(l, vals));
-	if (!lisp_isnil(l, syms) || !lisp_isnil(l, vals)) // TODO: Handle (x y . z)
+	for (; lisp_iscons(syms) && lisp_iscons(vals); syms = lisp_cdr(l, syms), vals = lisp_cdr(l, vals))
+		env = lisp_extend_env(l, env, lisp_car(l, syms), lisp_car(l, vals));
+	if (!lisp_isnil(l, syms) && lisp_type_get(syms) == LISP_SYMBOL) /* (arg . rest) */
+		return lisp_extend_env(l, env, syms, vals);
+	if (!lisp_isnil(l, syms) || !lisp_isnil(l, vals))
 		return l->Error;
 	return env;
 }
 
-static lisp_cell_t *lisp_define(lisp_t *l, lisp_cell_t *sym, lisp_cell_t *val) {
+static lisp_cell_t *lisp_define(lisp_t *l, lisp_cell_t *env, lisp_cell_t *sym, lisp_cell_t *val) {
 	lisp_asserts(l);
 	if (!sym || !val) { l->fatal = 1; return l->Error; }
 	assert(sym);
 	assert(val);
-	lisp_setcdr(l, l->env, lisp_cons(l, lisp_cons(l, sym, val), lisp_cdr(l, l->env)));
+	lisp_setcdr(l, env, lisp_cons(l, lisp_cons(l, sym, val), lisp_cdr(l, env)));
 	return val;
 }
 
@@ -379,9 +380,31 @@ again:
 	lisp_gc_stack_add(l, exp);
 	lisp_gc_stack_add(l, env);
 	switch (lisp_type_get(exp)) { /* A VM would be faster than this tree walker, but more complex */
-	case LISP_CONS: { /* This could be turned into `apply` */
+	case LISP_CONS: { /* TODO: Better error handling, and a method to catch errors */
 		lisp_cell_t *op = lisp_car(l, exp), *n = lisp_cdr(l, exp);
 		if (op == l->Error) return l->Error;
+		if (op == l->Quote || op == l->Unquote || op == l->Splice) return n;
+		if (op == l->Quasi) {
+			lisp_cell_t *head = n, *prev = n;
+			for (;!lisp_isnil(l, n) && n != l->Error; prev = n, n = lisp_cdr(l, n)) {
+				lisp_cell_t *op1 = lisp_car(l, lisp_car(l, n));
+				if (op1 == l->Unquote) {
+					lisp_setcar(l, n, lisp_eval(l, 0, lisp_cdr(l, lisp_car(l, n)), env, depth + 1));
+				} else if (op1 == l->Splice) {
+					lisp_cell_t *v = lisp_eval(l, 0, lisp_cdr(l, lisp_car(l, n)), env, depth + 1);
+					lisp_cell_t *hv = v;
+					for (;!lisp_isnil(l, lisp_cdr(l, v)) && v != l->Error; v = lisp_cdr(l, v))
+						;
+					lisp_setcdr(l, prev, hv);
+					n = lisp_cdr(l, n);
+					lisp_setcdr(l, v, n);
+
+				} else {
+					lisp_setcar(l, n, lisp_eval(l, 0, lisp_cons(l, l->Quasi, lisp_car(l, n)), env, depth + 1));
+				}
+			}
+			return head;
+		}
 		if (!lisp_isnil(l, n) && !lisp_ispropercons(l, n)) return l->Error;
 		if (op == l->If) {
 			lisp_cell_t *v = lisp_eval(l, 0, lisp_car(l, n), env, depth + 1);
@@ -404,35 +427,18 @@ again:
 			l->gc_stack_used = gc_saved_stack;
 			return lisp_gc_stack_add(l, t);
 		} else if (op == l->Define) {
+			lisp_cell_t *e = lisp_isnil(l, lisp_car(l, lisp_cdr(l, lisp_cdr(l, n)))) ? l->env : env;
 			l->gc_stack_used = gc_saved_stack;
-			lisp_cell_t *t = lisp_eval(l, 0, lisp_car(l, lisp_cdr(l, n)), env, depth + 1);
-			return lisp_gc_stack_add(l, lisp_define(l, lisp_car(l, n), t));
+			lisp_cell_t *t = lisp_eval(l, 0, lisp_car(l, lisp_cdr(l, n)), e, depth + 1);
+			return lisp_gc_stack_add(l, lisp_define(l, e, lisp_car(l, n), t));
 		} else if (op == l->Set) {
-			lisp_cell_t *c = lisp_assoc(l, lisp_car(l, n), env);
-			lisp_cell_t *v = lisp_eval(l, 0, lisp_car(l, lisp_cdr(l, n)), env, depth + 1);
-			if (lisp_isnil(l, c)) return l->Error;
+			lisp_cell_t *e = lisp_isnil(l, lisp_car(l, lisp_cdr(l, lisp_cdr(l, n)))) ? l->env : env;
+			lisp_cell_t *c = lisp_assoc(l, lisp_car(l, n), e);
+			if (lisp_isnil(l, lisp_cdr(l, n))) return c;
+			lisp_cell_t *v = lisp_eval(l, 0, lisp_car(l, lisp_cdr(l, n)), e, depth + 1);
+			if (lisp_isnil(l, c)) return lisp_define(l, e, lisp_car(l, n), v);
 			lisp_setcdr(l, c, v);
 			return v;
-		} else if (op == l->Quote || op == l->Unquote || op == l->Splice) {
-			return lisp_car(l, n);
-		} else if (op == l->Quasi) { // TODO: Fewer cons cells
-			exp = lisp_car(l, lisp_cdr(l, exp));
-			lisp_cell_t *head = exp, *prev = exp;
-			for (;!lisp_isnil(l, exp) && exp != l->Error; prev = exp, exp = lisp_cdr(l, exp))
-				if (lisp_car(l, lisp_car(l, exp)) == l->Unquote) {
-					lisp_setcar(l, exp, lisp_eval(l, 0, lisp_car(l, lisp_cdr(l, lisp_car(l, exp))), env, depth + 1));
-				} else if (lisp_car(l, lisp_car(l, exp)) == l->Splice) { // TODO: Better error checking
-					lisp_cell_t *v = lisp_eval(l, 0, lisp_car(l, lisp_cdr(l, lisp_car(l, exp))), env, depth + 1);
-					lisp_cell_t *hv = v;
-					for (;!lisp_isnil(l, lisp_cdr(l, v)) && v != l->Error; v = lisp_cdr(l, v))
-						;
-					lisp_setcdr(l, prev, hv);
-					exp = lisp_cdr(l, exp);
-					lisp_setcdr(l, v, exp);
-				} else {
-					lisp_setcar(l, exp, lisp_eval(l, 0, lisp_cons(l, l->Quasi, lisp_cons(l, lisp_car(l, exp), l->Nil)), env, depth + 1));
-				}
-			return head;
 		} else if (op == l->Progn) {
 			exp = n;
 			if (lisp_isnil(l, exp)) return l->Nil;
@@ -609,16 +615,16 @@ LISP_API lisp_cell_t *lisp_read(lisp_t *l, int (*get)(void *param), void *param,
 		}
 		return NULL;
 	}
-	if (!strcmp(t, "'")) /* TODO: Make more efficient, fewer cons */
-		return lisp_cons(l, l->Quote, lisp_cons(l, lisp_read(l, get, param, depth + 1), l->Nil));
+	if (!strcmp(t, "'"))
+		return lisp_cons(l, l->Quote, lisp_read(l, get, param, depth + 1));
 	if (!strcmp(t, "@"))
-		return lisp_cons(l, l->Quasi, lisp_cons(l, lisp_read(l, get, param, depth + 1), l->Nil));
+		return lisp_cons(l, l->Quasi, lisp_read(l, get, param, depth + 1));
 	if (!strcmp(t, ",")) {
 		if (!(t = lisp_token(l, get, param))) return NULL;
 		if (!strcmp(t, "@"))
-			return lisp_cons(l, l->Splice, lisp_cons(l, lisp_read(l, get, param, depth + 1), l->Nil));
+			return lisp_cons(l, l->Splice, lisp_read(l, get, param, depth + 1));
 		if (lisp_buf_putback(l) < 0) return l->Error;
-		return lisp_cons(l, l->Unquote, lisp_cons(l, lisp_read(l, get, param, depth + 1), l->Nil));
+		return lisp_cons(l, l->Unquote, lisp_read(l, get, param, depth + 1));
 	}
 	if (!lisp_string_to_number(t, &n, 10)) return lisp_mkint(l, n);
 	return lisp_intern(l, t);
@@ -722,7 +728,7 @@ LISP_API int lisp_function_add(lisp_t *l, const char *symbol, lisp_function_t fn
 	assert(fn);
 	lisp_cell_t *name = lisp_intern(l, symbol), *prim = lisp_mkprimop(l, fn, param);
 	if (!name || !prim) return -1;
-	return lisp_define(l, name, prim) ? 0 : -1;
+	return lisp_define(l, l->env, name, prim) ? 0 : -1;
 }
 
 static lisp_cell_t *lisp_prim_arith(lisp_t *l, lisp_cell_t *args, void *param) {
@@ -787,7 +793,7 @@ LISP_API int lisp_init(lisp_t *l) {
 	if (!(l->interned = lisp_cons(l, l->Nil, l->Nil))) goto fail;
 	if (!(l->env = lisp_cons(l, lisp_cons(l, l->Nil, l->Nil), l->Nil))) goto fail;
 	if (!(l->Tee     = lisp_intern(l, "t"))) goto fail;
-	if (!(lisp_define(l, l->Tee, l->Tee))) goto fail;
+	if (!(lisp_define(l, l->env, l->Tee, l->Tee))) goto fail;
 	if (!(l->Quote   = lisp_intern(l, "quote"))) goto fail; /* these definitions could be static */
 	if (!(l->If      = lisp_intern(l, "if"))) goto fail;
 	if (!(l->Loop    = lisp_intern(l, "do"))) goto fail;
