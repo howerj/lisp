@@ -91,7 +91,7 @@
   (test (odd? 4) nil)
   (if (neq ok '!) 'ok ok))
 
-; TODO: CONC, COND, AND, OR, MAP, FOLD, EQUAL, META
+; TODO: CONC, COND, COPY, AND, OR, MAP, FOLD, EQUAL, META
 
 (if extension
   (pgn 

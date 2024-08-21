@@ -367,7 +367,7 @@ again:
 	size_t gc_saved_stack = l->gc_stack_used;
 	if (l->fatal) return l->Error;
 	if (lisp_isnil(l, exp)) return l->Nil;
-	if (list) {
+	if (list > 0) {
 		lisp_cell_t *op = lisp_car(l, exp);
 		exp = lisp_cdr(l, exp);
 		op = lisp_cons(l, lisp_eval(l, 0, op, env, depth + 1), l->Nil);
@@ -384,7 +384,7 @@ again:
 		lisp_cell_t *op = lisp_car(l, exp), *n = lisp_cdr(l, exp);
 		if (op == l->Error) return l->Error;
 		if (op == l->Quote || op == l->Unquote || op == l->Splice) return n;
-		if (op == l->Quasi) { // TODO: Macros, expansion function / notes, lookup syms and replace
+		if (op == l->Quasi) {
 			lisp_cell_t *head = n, *prev = n;
 			for (;!lisp_isnil(l, n) && n != l->Error; prev = n, n = lisp_cdr(l, n)) {
 				lisp_cell_t *op1 = lisp_car(l, lisp_car(l, n));
@@ -403,6 +403,15 @@ again:
 					lisp_setcar(l, n, lisp_eval(l, 0, lisp_cons(l, l->Quasi, lisp_car(l, n)), env, depth + 1));
 				}
 			}
+			return head;
+		}
+		if (list < 0) {
+			exp = n;
+			op = lisp_cons(l, lisp_eval(l, -1, op, env, depth + 1), l->Nil);
+			lisp_cell_t *head = op;
+			for (; lisp_iscons(exp); exp = lisp_cdr(l, exp), op = lisp_cdr(l, op))
+				lisp_setcdr(l, op, lisp_cons(l, lisp_eval(l, -1, lisp_car(l, exp), env, depth + 1), l->Nil));
+			if (!lisp_isnil(l, exp)) return l->Error;
 			return head;
 		}
 		if (!lisp_isnil(l, n) && !lisp_ispropercons(l, n)) return l->Error;
@@ -477,7 +486,10 @@ again:
 		break;
 	case LISP_SYMBOL: {
 			lisp_cell_t *t = lisp_assoc(l, exp, env);
-			if (lisp_isnil(l, t)) return l->Error;
+			if (lisp_isnil(l, t)) {
+				if (list < 0) return exp;
+				return l->Error;
+			}
 			return lisp_cdr(l, t);
 		}
 		break;

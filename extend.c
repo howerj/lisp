@@ -21,6 +21,12 @@ static lisp_cell_t *lisp_prim_evlis(lisp_t *l, lisp_cell_t *args, void *param) {
 	return lisp_eval(l, 1, lisp_car(l, args), lisp_car(l, lisp_cdr(l, args)), l->depth + 1); 
 }
 
+static lisp_cell_t *lisp_prim_expand(lisp_t *l, lisp_cell_t *args, void *param) { 
+	(void)param;
+	lisp_cell_t *env = lisp_isnil(l, lisp_cdr(l, args)) ? l->current : lisp_cdr(l, args);
+	return lisp_eval(l, -1, lisp_car(l, args), env, l->depth + 1); 
+}
+
 static lisp_cell_t *lisp_prim_env(lisp_t *l, lisp_cell_t *args, void *param) { 
 	if (lisp_asserts(l) < 0) return l->Error; 
 	if (lisp_isnil(l, args)) return (lisp_cell_t*)param;
@@ -166,6 +172,7 @@ int lisp_extend(lisp_t *l) {
 		{  "env",      lisp_prim_env,      l->env,  },
 		{  "eval",     lisp_prim_eval,     NULL,    },
 		{  "evlis",    lisp_prim_evlis,    NULL,    },
+		{  "expand",   lisp_prim_expand,   NULL,    },
 		{  "fatal",    lisp_prim_fatal,    NULL,    },
 		{  "gc",       lisp_prim_gc,       NULL,    },
 		{  "get",      lisp_prim_get,      stdin,   },
