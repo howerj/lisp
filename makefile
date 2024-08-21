@@ -22,11 +22,11 @@ lispcc: lisp.cc lisp.h makefile
 	${CXX} ${CXXFLAGS} $< -o $@
 
 extend: CFLAGS += -DLISP_EXTEND=1
-extend: extend.o lisp.h makefile
+extend: extend.c lisp.h makefile
 	${CC} ${CFLAGS} $< -o $@
 
 extension: extend
-	${DBG} cat lisp.lsp - | ./extend
+	cat lisp.lsp - | ${DBG} ./extend
 
 clean:
 	git clean -dffx

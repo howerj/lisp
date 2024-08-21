@@ -29,8 +29,8 @@ The language consists of the following built in functions:
 * `car`, `(cdr '(x y))`, get first element in a cons list
 * `cdr`, `(cdr '(x y))`, get second element in a cons list
 * `type`, `(type 'x)`, get the type of an expression as a number.
-* `add`, `sub`, `and`, `or`, `xor`, `mul`, `div`, `mod`, `lls`, `lrs`, `min`,
-  `max` the arithmetic operators
+* `add`, `sub`, `band`, `bor`, `bxor`, `mul`, `div`, `mod`, `lls`, `lrs`, `min`,
+  `max` are the arithmetic and bitwise operators
 * `eq`, `neq`, `less`, `leq`, `more`, `meq`, the comparison operators
 * `!`, `(!)`, signal an error condition. This happens on many error
 conditions with no way to tell what caused it. It usually causes any
@@ -101,6 +101,12 @@ interned) but that would add a lot of size to the interpreter.
 * [klisp](http://t3x.org/klisp) is a tiny public domain lisp with more 
   functionality (although it has other limitations) that concepts could be
   borrowed from, specifically around macros.
+* Internally pointers are used, instead there are advantages of using
+  integers (especially integers of type `intptr_t`) and offsets into
+  an array such as; being able to serialize the LISP interpreters state,
+  being able to borrow bits from pointers for other purposes, ability 
+  to use the location of an object as information about the object (e.g 
+  all objects in this area of type X).
 
 ## Bugs and Limitations
 

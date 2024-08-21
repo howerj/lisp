@@ -6,13 +6,13 @@
 
 static lisp_cell_t *lisp_prim_assoc(lisp_t *l, lisp_cell_t *args, void *param) { 
 	(void)param; 
-	lisp_cell_t *env = lisp_isnil(l, lisp_cdr(l, args)) ? l->env : lisp_cdr(l, args);
+	lisp_cell_t *env = lisp_isnil(l, lisp_cdr(l, args)) ? l->current : lisp_cdr(l, args);
 	return lisp_assoc(l, lisp_car(l, args), env); 
 }
 
 static lisp_cell_t *lisp_prim_eval(lisp_t *l, lisp_cell_t *args, void *param) { 
 	(void)param;
-	lisp_cell_t *env = lisp_isnil(l, lisp_cdr(l, args)) ? l->env : lisp_cdr(l, args);
+	lisp_cell_t *env = lisp_isnil(l, lisp_cdr(l, args)) ? l->current : lisp_cdr(l, args);
 	return lisp_eval(l, 0, lisp_car(l, args), env, l->depth + 1); 
 }
 
@@ -132,6 +132,31 @@ static lisp_cell_t *lisp_prim_symbols(lisp_t *l, lisp_cell_t *args, void *param)
 	return l->interned;
 }
 
+static lisp_cell_t *lisp_prim_exit(lisp_t *l, lisp_cell_t *args, void *param) {
+	(void)param;
+	if (lisp_isnil(l, args)) exit(0);
+	exit(lisp_ptrval(lisp_car(l, args)));
+	return l->Error;
+}
+
+static lisp_cell_t *lisp_prim_memory(lisp_t *l, lisp_cell_t *args, void *param) {
+	(void)param;
+	(void)args;
+	if (!l->arena) return l->Error;
+	lisp_arena_t *a = l->arena;
+	lisp_node_t *n = a->head;
+	size_t i = 0;
+	for (;n; n = n->next, i++)
+		;
+	return lisp_cons(l, lisp_mkint(l, a->bytes),
+		lisp_cons(l, lisp_mkint(l, a->allocs), 
+		lisp_cons(l, lisp_mkint(l, a->frees),
+		lisp_cons(l, lisp_mkint(l, a->reallocs),
+		lisp_cons(l, lisp_mkint(l, LISP_ARENA_SIZE),
+		lisp_cons(l, lisp_mkint(l, i),
+		l->Nil))))));
+}
+
 int lisp_extend(lisp_t *l) {
 	if (lisp_asserts(l) < 0) return -1;
 	typedef struct { const char *name; lisp_function_t fn; void *arg; } lisp_extend_t;
@@ -152,6 +177,8 @@ int lisp_extend(lisp_t *l) {
 		{  "save",     lisp_prim_save,     NULL,    },
 		{  "load",     lisp_prim_load,     NULL,    },
 		{  "symbols",  lisp_prim_symbols,  NULL,    },
+		{  "exit",     lisp_prim_exit,     NULL,    },
+		{  "memory",   lisp_prim_memory,   NULL,    },
 	};
 	for (size_t i = 0; i < LISP_NELEMS(fns); i++) {
 		lisp_extend_t *f = &fns[i];

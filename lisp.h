@@ -380,11 +380,11 @@ again:
 	lisp_gc_stack_add(l, exp);
 	lisp_gc_stack_add(l, env);
 	switch (lisp_type_get(exp)) { /* A VM would be faster than this tree walker, but more complex */
-	case LISP_CONS: { /* TODO: Better error handling, and a method to catch errors */
+	case LISP_CONS: { /* We could improve error handling here, specifically returning l->Error in more circumstances */
 		lisp_cell_t *op = lisp_car(l, exp), *n = lisp_cdr(l, exp);
 		if (op == l->Error) return l->Error;
 		if (op == l->Quote || op == l->Unquote || op == l->Splice) return n;
-		if (op == l->Quasi) {
+		if (op == l->Quasi) { // TODO: Macros, expansion function / notes, lookup syms and replace
 			lisp_cell_t *head = n, *prev = n;
 			for (;!lisp_isnil(l, n) && n != l->Error; prev = n, n = lisp_cdr(l, n)) {
 				lisp_cell_t *op1 = lisp_car(l, lisp_car(l, n));
@@ -809,7 +809,7 @@ LISP_API int lisp_init(lisp_t *l) {
 	if (lisp_function_add(l, "car", lisp_prim_car, NULL) < 0) goto fail;
 	if (lisp_function_add(l, "cdr", lisp_prim_cdr, NULL) < 0) goto fail;
 	if (lisp_function_add(l, "type", lisp_prim_type, NULL) < 0) goto fail;
-	static const char *arith[] = { "add", "sub", "and", "or", "xor", "mul", "div", "mod", "lls", "lrs", "min", "max", };
+	static const char *arith[] = { "add", "sub", "band", "bor", "bxor", "mul", "div", "mod", "lls", "lrs", "min", "max", };
 	for (size_t i = 0; i < LISP_NELEMS(arith); i++)
 		if (lisp_function_add(l, arith[i], lisp_prim_arith, (void*)i) < 0)
 			goto fail;
@@ -835,11 +835,7 @@ LISP_API int lisp_deinit(lisp_t *l) {
 	lisp_free(l, l->gc_stack);
 	lisp_free(l, l->buf);
 	lisp_free(l, l->bufback);
-	l->gc_stack = NULL;
-	l->gc_stack_allocated = 0;
-	l->buf = NULL;
-	l->bufback = NULL;
-	l->init = 0;
+	memset(l, 0, sizeof *l);
 	return 0;
 }
 
@@ -863,7 +859,10 @@ LISP_API int lisp_unit_tests(lisp_t *l) {
 struct lisp_node; /* custom allocator type; enough to store most common allocation type */
 typedef struct lisp_node lisp_node_t;
 struct lisp_node { uintptr_t d[3]; lisp_node_t *next; };
-typedef struct { lisp_node_t n[LISP_ARENA_SIZE]; lisp_node_t *head; int ini, fail_after_n_allocs, allocs; } lisp_arena_t;
+typedef struct { 
+	lisp_node_t n[LISP_ARENA_SIZE]; lisp_node_t *head; 
+	long ini, fail_after_n_allocs, allocs, bytes, frees, reallocs; } 
+lisp_arena_t;
 
 static inline lisp_node_t *lisp_node_alloc(lisp_arena_t *a, size_t sz) {
 	if (!LISP_CUSTOM_ARENA) return NULL;
@@ -908,13 +907,16 @@ static inline int lisp_node_free(lisp_arena_t *a, void *p) {
 }
 
 static void *lisp_allocator(void *arena, void *ptr, const size_t oldsz, const size_t newsz) {
-	if (newsz == 0) { if (!lisp_node_free((lisp_arena_t *)arena, ptr)) free(ptr); return NULL; }
+	lisp_arena_t *a = (lisp_arena_t*)arena;
+	if (newsz == 0) { if(a) a->frees++; if (!lisp_node_free(a, ptr)) free(ptr); return NULL; }
 	if (newsz > oldsz) { 
-		lisp_arena_t *a = (lisp_arena_t*)arena;
-		if (a && a->fail_after_n_allocs && a->allocs++ > a->fail_after_n_allocs) return NULL;
+		if (a && a->allocs++ > a->fail_after_n_allocs && a->fail_after_n_allocs) return NULL;
+		if (a && ptr) a->reallocs++;
+		if (a) a->bytes += newsz;
 		if (lisp_node_is(a, ptr)) { /* move from lisp_node -> realloc */
 			if (newsz <= LISP_MEMBER_SIZE(lisp_node_t, d)) return ptr;
 			void *r = calloc(newsz, 1);
+			if (!r) return NULL;
 			memcpy(r, ptr, LISP_MEMBER_SIZE(lisp_node_t, d));
 			lisp_node_free(a, ptr);
 			return r;
