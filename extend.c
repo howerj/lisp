@@ -6,13 +6,15 @@
 
 static lisp_cell_t *lisp_prim_assoc(lisp_t *l, lisp_cell_t *args, void *param) { 
 	(void)param; 
-	lisp_cell_t *env = lisp_isnil(l, lisp_cdr(l, args)) ? l->current : lisp_cdr(l, args);
+	lisp_cell_t *env = lisp_car(l, lisp_cdr(l, args));
+	env = lisp_isnil(l, env) || env == l->Error ? l->current : env;
 	return lisp_assoc(l, lisp_car(l, args), env); 
 }
 
 static lisp_cell_t *lisp_prim_eval(lisp_t *l, lisp_cell_t *args, void *param) { 
 	(void)param;
-	lisp_cell_t *env = lisp_isnil(l, lisp_cdr(l, args)) ? l->current : lisp_cdr(l, args);
+	lisp_cell_t *env = lisp_car(l, lisp_cdr(l, args));
+	env = lisp_isnil(l, env) || env == l->Error ? l->current : env;
 	return lisp_eval(l, 0, lisp_car(l, args), env, l->depth + 1); 
 }
 
@@ -23,7 +25,8 @@ static lisp_cell_t *lisp_prim_evlis(lisp_t *l, lisp_cell_t *args, void *param) {
 
 static lisp_cell_t *lisp_prim_expand(lisp_t *l, lisp_cell_t *args, void *param) { 
 	(void)param;
-	lisp_cell_t *env = lisp_isnil(l, lisp_cdr(l, args)) ? l->current : lisp_cdr(l, args);
+	lisp_cell_t *env = lisp_car(l, lisp_cdr(l, args));
+	env = lisp_isnil(l, env) || env == l->Error ? l->current : env;
 	return lisp_eval(l, -1, lisp_car(l, args), env, l->depth + 1); 
 }
 
@@ -163,6 +166,41 @@ static lisp_cell_t *lisp_prim_memory(lisp_t *l, lisp_cell_t *args, void *param) 
 		l->Nil))))));
 }
 
+static lisp_cell_t *lisp_prim_gensym(lisp_t *l, lisp_cell_t *args, void *param) {
+	(void)param;
+	(void)args;
+	char buf[64 + 3] = { '\'', };
+	if (!lisp_number_to_string(buf + 1, l->gensym++, 10)) return l->Error;
+	return lisp_intern(l, buf /* not return value of `lisp_number_to_string` */);
+}
+
+static lisp_cell_t *lisp_prim_cell(lisp_t *l, lisp_cell_t *args, void *param) {
+	(void)param;
+	const uintptr_t idx = lisp_compval(lisp_car(l, lisp_cdr(l, args)));
+	lisp_cell_t *obj = lisp_car(l, args);
+	switch (lisp_type_get(obj)) {
+	case LISP_SYMBOL: {
+		const size_t length = lisp_length_get(obj);
+		if (!length) return l->Nil;
+		return lisp_mkint(l, obj->t[0].s[LISP_MIN(length - 1, idx)]);
+	}
+	case LISP_PRIMITIVE:
+		assert(lisp_length_get(obj) >= 2);
+		return lisp_mkint(l, (uintptr_t)obj->t[LISP_MIN(idx, 1)].l);
+	case LISP_FUNCTION:
+		assert(lisp_length_get(obj) >= 3);
+		return obj->t[LISP_MIN(idx, 2)].l;
+	case LISP_INTEGER:
+		break;
+	case LISP_CONS:
+		assert(lisp_length_get(obj) >= 2);
+		return obj->t[LISP_MIN(idx, 1)].l;
+	case LISP_INVALID: break;
+	}
+	return l->Error;
+}
+
+
 int lisp_extend(lisp_t *l) {
 	if (lisp_asserts(l) < 0) return -1;
 	typedef struct { const char *name; lisp_function_t fn; void *arg; } lisp_extend_t;
@@ -186,6 +224,8 @@ int lisp_extend(lisp_t *l) {
 		{  "symbols",  lisp_prim_symbols,  NULL,    },
 		{  "exit",     lisp_prim_exit,     NULL,    },
 		{  "memory",   lisp_prim_memory,   NULL,    },
+		{  "gensym",   lisp_prim_gensym,   NULL,    },
+		{  "cell",     lisp_prim_cell,     NULL,    },
 	};
 	for (size_t i = 0; i < LISP_NELEMS(fns); i++) {
 		lisp_extend_t *f = &fns[i];

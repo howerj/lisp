@@ -55,14 +55,14 @@ typedef struct gc_list { lisp_cell_t *ref; struct gc_list *next; } lisp_gc_list_
 
 struct lisp { /* Should be opaque, do not mess with the internals */
 	void *(*alloc)(void *arena, void *ptr, size_t oldsz, size_t newsz);
-	void *arena;
+	void *arena /* passed to alloc */, *tag /* user defined tag */;
 	lisp_cell_t *interned /* interned symbols */, *env /* top level environment */, *current /* current env */,
 		    **gc_stack, /* garbage collection stack used in eval */
 		    *Nil, *Tee, *Fn, *Quote, *If, *Loop, *Define, *Set, *Progn, *Quasi, *Unquote, *Splice, *Error;
 	lisp_gc_list_t *gc_head; /* list of all allocated cells */
 	int ungetch /* single character unget buffer */, depth /* saved recursion depth for eval */;
 	char *buf, *bufback; /* used to store symbols/strings whilst parsing */
-	size_t buf_used, buf_size, gc_stack_allocated, gc_stack_used, gc_collect;
+	size_t buf_used, buf_size, gc_stack_allocated, gc_stack_used, gc_collect, gensym;
 	unsigned fatal: 1, gc: 1 /* gc on/off*/, dynamic_scope: 1, add_progn: 1, init: 1, unget: 1, putback: 1 /* token put back */;
 };
 
@@ -79,6 +79,8 @@ LISP_EXTERN lisp_cell_t *lisp_assoc(lisp_t *l, lisp_cell_t *key, lisp_cell_t *al
 
 extern int lisp_extend(lisp_t *l); /* You define this function if LISP_EXTEND is defined, it will be called in `lisp_init` */
 
+LISP_EXTERN char *lisp_number_to_string(char buf[64 + 1 + 1], intptr_t n, int base);
+LISP_EXTERN char *lisp_string_reverse(char *s, size_t length); /* Modifies Argument */
 /* Do not call `lisp_make_string` and `lisp_make_object` directly */
 LISP_EXTERN lisp_cell_t *lisp_make_string(lisp_t *l, int type, size_t length, const char *string);
 LISP_EXTERN lisp_cell_t *lisp_make_object(lisp_t *l, int type, size_t count, ...);
@@ -120,6 +122,7 @@ static inline int lisp_ispropercons(lisp_t *l, lisp_cell_t *c) {
 #ifdef LISP_IMPLEMENTATION
 
 #define LISP_MAX(X, Y)     ((X) > (Y) ? (X) : (Y))
+#define LISP_MIN(X, Y)     ((X) < (Y) ? (X) : (Y))
 #define LISP_NELEMS(X)     (sizeof(X) / sizeof ((X)[0]))
 #define LISP_MEMBER_SIZE(TYPE, MEMBER) (sizeof (((TYPE*)0)->MEMBER))
 #define lisp_implies(P, Q) assert(!(P) || (Q))
@@ -649,7 +652,7 @@ static int lisp_puts(int (*put)(void *param, int ch), void *param, const char *s
 	return 0;
 }
 
-static inline char *lisp_string_reverse(char *s, size_t length) { /* Modifies Argument */
+LISP_API char *lisp_string_reverse(char *s, size_t length) { /* Modifies Argument */
 	assert(s);
 	for (size_t i = 0; i < (length / 2); i++) {
 		char *a = &s[i], *b = &s[(length - i) - 1], t = 0;
@@ -657,8 +660,7 @@ static inline char *lisp_string_reverse(char *s, size_t length) { /* Modifies Ar
 	}
 	return s;
 }
-
-static char *lisp_number_to_string(char buf[64 + 1 + 1], intptr_t n, int base) {
+LISP_API char *lisp_number_to_string(char buf[64 + 1 + 1], intptr_t n, int base) {
 	assert(buf);
 	assert(base >= 2 && base <= 36);
 	int negate = n < 0, i = 0;
@@ -940,7 +942,7 @@ static void *lisp_allocator(void *arena, void *ptr, const size_t oldsz, const si
 	return ptr;
 }
 
-static int lisp_put_ch(void *param, int ch) { return fputc(ch, (FILE*)param); }
+static int lisp_put_ch(void *param, int ch) { ch = fputc(ch, (FILE*)param); return fflush((FILE*)param) < 0 ? -1 : ch; }
 static int lisp_get_ch(void *param) { return fgetc((FILE*)param); }
 typedef struct { int (*get)(void *); int (*put)(void *, int ch); void *in, *out; } lisp_io_t;
 
