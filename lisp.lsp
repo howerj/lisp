@@ -25,8 +25,8 @@
   (def signum (fn (_) if (more _ 0) 1 (if (less _ 0) -1 0)))
   (def error? (fn (x) eq '! x))
   (def null (fn (x) if x nil t))
-  (def id (fn (x) car (cons x nil)))
-  (def list (fn _ id _))
+  (def id (fn (x) pgn x))
+  (def list (fn _ pgn _))
   (def odd? (fn (x) eq 1 (band x 1)))
   (def even? (fn (x) eq 0 (band x 1)))
   (def abs (fn (_) if (less _ 0) (negate _) (id _)))
@@ -39,6 +39,8 @@
   (def copy (fn (l) if (atom l) l (cons (car l) (copy (cdr l))))) ; create a copy of list
   (def log (fn (n b) pgn (set r 0) (do (bool n) pgn (set r (inc r)) (set n (div n b)) (id r))))
   (def popcnt (fn (n) pgn (set r 0) (if (eq 0 n) 0 (do (bool n) pgn (set r (if (neq 0 (band n 1)) (inc r) (id r))) (set n (lrs n 1)) (id r)))))
+  (def gcd (fn (n m) if (eq m 0) n (gcd m (mod n m))))
+  (def lcm (fn (n m) div (mul n m) (gcd n m)))
   (def reverse 
      (fn (x) 
          pgn
@@ -79,7 +81,6 @@
            pgn
            (set n (add n -1))
            (set l (if (cons? l) (cdr l) nil)))))
-
   (def nth (fn (n l) pgn (set l (nthcar n l)) (if (cons? l) (car l) nil)))
   (def append 
      (fn (x y)
@@ -90,10 +91,9 @@
 	 if (null l) l
 	 (if (atom l) (list l)
 	   (append (flatten (car l)) (flatten (cdr l))))))
-
   (def history ())
   (def history? (fn (n) nth n history))
-  (def history-push (fn (e) set history (cons e history)))
+  (def history-push (fn (e) if (eq ! e) history (if (eq % e) history (set history (cons e history)))))
   (def history-pop (fn () if history (set history (cdr history)) nil))
   (def history-clear (fn () set history ()))
   'ok)
@@ -154,10 +154,13 @@
   (test (popcnt 1) 1)
   (test (popcnt -1) #bits)
   (test (popcnt 3) 2)
+  (test (lcm 10 5) 10)
+  (test (gcd 99 3) 3)
+  (test (gcd 1 1) 1)
+  (test (lcm 0 0) '!)
   (if (neq ok '!) 'ok ok))
 
 ; TODO: COND, AND, OR, MAP, META, test EVLIS, more tests
-; TODO: exp
 
 (def fold ; TODO: Work for `list` ?
      (pgn
@@ -237,7 +240,6 @@
     (def magenta (fn () color 'magenta nil t))
     (def cyan    (fn () color 'cyan nil t))
     (def white   (fn () color 'white nil t))
-    
     (def colorize
          (fn (_)
              pgn
@@ -250,12 +252,10 @@
              (write _)
              (reset)
              t))
-    
     (def spaces (fn (_) do (more _ 0) pgn (space) (set _ (dec _))))
     (def lpar (fn () put 40))
     (def rpar (fn () put 41))
     (def double (fn (_) add _ _))
-    
     (def _pretty 
          (fn (n d)
              if (atom n) (colorize n)
@@ -277,11 +277,10 @@
                (nl)
                (spaces (double d))
                t)))
-    
     (def pp (fn (n) _pretty n 0))
     (def pretty (fn (n) _pretty n 0))
     (def history-save (fn () save '.history history))
-    (def history-load (fn () if (eq '! (set history (load '.history))) (set history ()) history))
+    (def history-load (fn () if (eq ! (set history (load '.history))) (set history ()) history))
     (writes 'Progam 'Lisp) 
     (eval @(writes 'Version ,@version)) (nl)
     (writes 'Email email) (nl)

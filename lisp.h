@@ -21,7 +21,7 @@ extern "C" {
 #endif
 
 #ifndef LISP_MAX_DEPTH /* Maximum recursion depth, set to zero to disable checks (may cause stack overflow) */
-#define LISP_MAX_DEPTH (128)
+#define LISP_MAX_DEPTH (512)
 #endif
 
 #ifndef LISP_COLLECT_EVERY /* Call garbage collector every X allocations */
@@ -218,7 +218,7 @@ static lisp_cell_t *lisp_gc_add(lisp_t *l, lisp_cell_t *op) {
 LISP_API lisp_cell_t *lisp_make_object(lisp_t *l, int type, size_t count, ...) {
 	if (lisp_asserts(l) < 0) { assert(l->Error); return l->Error; }
 	assert(type != LISP_INVALID);
-	lisp_cell_t *r = (lisp_cell_t*)lisp_alloc(l, sizeof (*r) + count*(sizeof (r->t[0])));
+	lisp_cell_t *r = (lisp_cell_t*)lisp_alloc(l, sizeof (*r) + count * (sizeof (r->t[0])));
 	if (!r) goto end;
 	lisp_type_set(r, type); /* For integer types a small cache (<16) of the most common values could be used instead */
 	lisp_length_set(r, count);
@@ -633,8 +633,8 @@ LISP_API lisp_cell_t *lisp_read(lisp_t *l, int (*get)(void *param), void *param,
 	}
 	if (!strcmp(t, "%"))
 		return lisp_cons(l, l->Quote, l->Eof);
-	/*if (!strcmp(t, "!"))
-		return lisp_cons(l, l->Quote, l->Error);*/
+	if (!strcmp(t, "!"))
+		return lisp_cons(l, l->Quote, l->Error);
 	if (!strcmp(t, "'"))
 		return lisp_cons(l, l->Quote, lisp_read(l, get, param, depth + 1));
 	if (!strcmp(t, "@"))

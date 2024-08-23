@@ -12,22 +12,9 @@ static lisp_cell_t *lisp_prim_assoc(lisp_t *l, lisp_cell_t *args, void *param) {
 }
 
 static lisp_cell_t *lisp_prim_eval(lisp_t *l, lisp_cell_t *args, void *param) { 
-	(void)param;
 	lisp_cell_t *env = lisp_car(l, lisp_cdr(l, args));
 	env = lisp_isnil(l, env) || env == l->Error ? l->current : env;
-	return lisp_eval(l, 0, lisp_car(l, args), env, l->depth + 1); 
-}
-
-static lisp_cell_t *lisp_prim_evlis(lisp_t *l, lisp_cell_t *args, void *param) { 
-	(void)param; 
-	return lisp_eval(l, 1, lisp_car(l, args), lisp_car(l, lisp_cdr(l, args)), l->depth + 1); 
-}
-
-static lisp_cell_t *lisp_prim_expand(lisp_t *l, lisp_cell_t *args, void *param) { 
-	(void)param;
-	lisp_cell_t *env = lisp_car(l, lisp_cdr(l, args));
-	env = lisp_isnil(l, env) || env == l->Error ? l->current : env;
-	return lisp_eval(l, -1, lisp_car(l, args), env, l->depth + 1); 
+	return lisp_eval(l, (intptr_t)param, lisp_car(l, args), env, l->depth + 1); 
 }
 
 static lisp_cell_t *lisp_prim_env(lisp_t *l, lisp_cell_t *args, void *param) { 
@@ -190,16 +177,14 @@ static lisp_cell_t *lisp_prim_cell(lisp_t *l, lisp_cell_t *args, void *param) {
 	case LISP_FUNCTION:
 		assert(lisp_length_get(obj) >= 3);
 		return obj->t[LISP_MIN(idx, 2)].l;
-	case LISP_INTEGER:
-		break;
 	case LISP_CONS:
 		assert(lisp_length_get(obj) >= 2);
 		return obj->t[LISP_MIN(idx, 1)].l;
+	case LISP_INTEGER: break;
 	case LISP_INVALID: break;
 	}
 	return l->Error;
 }
-
 
 static lisp_cell_t *lisp_prim_param(lisp_t *l, lisp_cell_t *args, void *param) {
 	(void)l;
@@ -214,9 +199,9 @@ int lisp_extend(lisp_t *l) {
 		{  "assoc",    lisp_prim_assoc,    NULL,    },
 		{  "depth",    lisp_prim_depth,    NULL,    },
 		{  "env",      lisp_prim_env,      l->env,  },
-		{  "eval",     lisp_prim_eval,     NULL,    },
-		{  "evlis",    lisp_prim_evlis,    NULL,    },
-		{  "expand",   lisp_prim_expand,   NULL,    },
+		{  "eval",     lisp_prim_eval,     (void*)0l,  },
+		{  "evlis",    lisp_prim_eval,     (void*)1l,  },
+		{  "expand",   lisp_prim_eval,     (void*)-1l, },
 		{  "fatal",    lisp_prim_fatal,    NULL,    },
 		{  "gc",       lisp_prim_gc,       NULL,    },
 		{  "get",      lisp_prim_get,      stdin,   },
@@ -232,7 +217,7 @@ int lisp_extend(lisp_t *l) {
 		{  "memory",   lisp_prim_memory,   NULL,    },
 		{  "gensym",   lisp_prim_gensym,   NULL,    },
 		{  "cell",     lisp_prim_cell,     NULL,    },
-		{  "eof",      lisp_prim_param,     l->Eof,  },
+		{  "eof",      lisp_prim_param,    l->Eof,  },
 	};
 	for (size_t i = 0; i < LISP_NELEMS(fns); i++) {
 		lisp_extend_t *f = &fns[i];
