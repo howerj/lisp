@@ -17,6 +17,7 @@
   (def not (fn (x) if x nil t))
   (def inc (fn (_) add _ 1))
   (def dec (fn (_) add _ -1))
+  (def bool (fn (_) if (eq _ 0) nil t))
   (def atom (fn (x) neq (type x) (type (cons nil nil))))
   (def invert (fn (_) bxor _ -1))
   (def negate (fn (_) mul _ -1))
@@ -36,6 +37,8 @@
   (def #max (bxor -1 #min))
   (def extension (cons? (set env))) ; Test for function that only exists in the extension code
   (def copy (fn (l) if (atom l) l (cons (car l) (copy (cdr l))))) ; create a copy of list
+  (def log (fn (n b) pgn (set r 0) (do (bool n) pgn (set r (inc r)) (set n (div n b)) (id r))))
+  (def popcnt (fn (n) pgn (set r 0) (if (eq 0 n) 0 (do (bool n) pgn (set r (if (neq 0 (band n 1)) (inc r) (id r))) (set n (lrs n 1)) (id r)))))
   (def reverse 
      (fn (x) 
          pgn
@@ -68,11 +71,34 @@
          if (atom a) (if (atom b) (eq a b) nil)
          (if (atom b) nil
          (if (equal (car a) (car b)) (equal (cdr a) (cdr b)) nil))))
+  (def nthcar
+     (fn (n l)
+         if (leq n 0) l 
+         (do
+           (more n 0)
+           pgn
+           (set n (add n -1))
+           (set l (if (cons? l) (cdr l) nil)))))
+
+  (def nth (fn (n l) pgn (set l (nthcar n l)) (if (cons? l) (car l) nil)))
+  (def append 
+     (fn (x y)
+	 if (null x) y
+	 (cons (car x) (append (cdr x) y))))
+  (def flatten
+     (fn (l)
+	 if (null l) l
+	 (if (atom l) (list l)
+	   (append (flatten (car l)) (flatten (cdr l))))))
+
+  (def history ())
+  (def history? (fn (n) nth n history))
+  (def history-push (fn (e) set history (cons e history)))
+  (def history-pop (fn () if history (set history (cdr history)) nil))
+  (def history-clear (fn () set history ()))
   'ok)
 
-
-; Test Functions
-'BIST
+'BIST ; A set of Built In Self Tests
 (pgn
   (def ok t)
   (def test (fn (n v) if (neq n v) (set ok '!) ok))
@@ -106,29 +132,32 @@
   (test (equal '(a (b) c) '1) nil)
   (test (equal (memb 'x '(a b c x y z)) '(x y z)) t)
   (test (equal (memb 'x '(a b c y z)) '()) t)
+  (test (nth 0 '(1 2 3)) 1)
+  (test (nth 1 '(1 2 3)) 2)
+  (test (nth 2 '(1 2 3)) 3)
+  (test (nth 3 '(1 2 3)) nil)
 ;  (test (equal (mapcar (fn (_) mul _ _) '(1 -2 3 4)) '(1 4 9 16)) t)
-;  (test (equal (flatten 'a) 'a) t)
-;  (test (equal (flatten '(a)) '(a)) t)
-;  (test (equal (flatten '(1 2 3)) '(1 2 3)) t)
-;  (test (equal (flatten '(1 (2) 3)) '(1 2 3)) t)
-;  (test (equal (flatten '((1) ((2) 3))) '(1 2 3)) t)
+  (test (equal (flatten '()) '()) t)
+  (test (equal (flatten '(a)) '(a)) t)
+  (test (equal (flatten '(1 2 3)) '(1 2 3)) t)
+  (test (equal (flatten '(1 (2) 3)) '(1 2 3)) t)
+  (test (equal (flatten '((1) ((2) 3))) '(1 2 3)) t)
+  (test (log 1 10) 1)
+  (test (log 10 10) 2)
+  (test (log 100 10) 3)
+  (test (log 101 10) 3)
+  (test (log 999 10) 3)
+  (test (log 1000 10) 4)
+  (test (popcnt #min) 1)
+  (test (popcnt #max) (dec #bits))
+  (test (popcnt 0) 0)
+  (test (popcnt 1) 1)
+  (test (popcnt -1) #bits)
+  (test (popcnt 3) 2)
   (if (neq ok '!) 'ok ok))
 
 ; TODO: COND, AND, OR, MAP, META, test EVLIS, more tests
-; TODO: Pop count, logarithm, exp
-
-;   (def flatten (fn (l)
-;          if (atom l) l
-;          (cons 
-;            (if (cons? (car l))
-;              (flatten (caar l))
-;              (car l))
-;            (flatten (cdr l)))))
- 
-; (flatten '((1) ((2) 3) 4))
-; (flatten '(1 (2) 3))
-
-; TODO: Pre expand function definitions
+; TODO: exp
 
 (def fold ; TODO: Work for `list` ?
      (pgn
@@ -182,97 +211,100 @@
     (def prompt (fn () pgn (nl) (put '>) (space) nil))
     (def read (fn () in))
     (def write (fn (_) out _))
-    (def bool (fn (_) if (eq _ 0) t nil))
     (def print (fn (_) pgn (set _ (write _)) (nl) (bool _)))
     (def writes (fn _ do (cons? _) pgn (out (car _)) (set _ (cdr _)) t))
+    (def ansi t) ; (def ansi (eq (getenv 'COLOR) 'ON))
+    (def csi (fn () pgn (put 27) (put 91)))
+    (def reset (fn () if ansi (pgn (csi) (put 48) (put 109) t) t))
+    (def colors 
+         '(
+           (black . 0) (red . 1) (green . 2) 
+           (yellow . 3) (blue . 4) (magenta . 5)
+           (cyan . 6) (white . 7)))
+    (def color 
+         (fn (c back bright) 
+             if ansi
+             (pgn 
+               (csi) 
+               (if bright (put 49) (put 48)) (put 59) 
+               (if back (put 52) (put 51)) (put (add 48 (cdr (assoc c colors))))
+               (put 109) t) t))
+    (def black   (fn () color 'black nil t))
+    (def red     (fn () color 'red nil t))
+    (def green   (fn () color 'green nil t))
+    (def yellow  (fn () color 'yellow nil t))
+    (def blue    (fn () color 'blue nil t))
+    (def magenta (fn () color 'magenta nil t))
+    (def cyan    (fn () color 'cyan nil t))
+    (def white   (fn () color 'white nil t))
+    
+    (def colorize
+         (fn (_)
+             pgn
+             (if (null _) (red) nil)
+             (if (eq (type _) (type 1)) (blue) nil)
+             (if (eq (type _) (type 'a)) (yellow) nil)
+             (if (eq _ t) (green) nil)
+             (if (eq (type _) (type add)) (magenta) nil)
+             (if (eq (type _) (type id)) (cyan) nil)
+             (write _)
+             (reset)
+             t))
+    
+    (def spaces (fn (_) do (more _ 0) pgn (space) (set _ (dec _))))
+    (def lpar (fn () put 40))
+    (def rpar (fn () put 41))
+    (def double (fn (_) add _ _))
+    
+    (def _pretty 
+         (fn (n d)
+             if (atom n) (colorize n)
+             (pgn
+               (nl)
+               (spaces (double d))
+               (lpar)
+               (nl)
+               (spaces (double (inc d)))
+               (do
+                 (cons? n)
+                 pgn
+                 (_pretty (car n) (inc d))
+                 (set n (cdr n)))
+	       (if (null n) t (pgn (put 46) (space) (_pretty n (inc d))))
+               (nl)
+               (spaces (double d))
+               (rpar)
+               (nl)
+               (spaces (double d))
+               t)))
+    
+    (def pp (fn (n) _pretty n 0))
+    (def pretty (fn (n) _pretty n 0))
+    (def history-save (fn () save '.history history))
+    (def history-load (fn () if (eq '! (set history (load '.history))) (set history ()) history))
     (writes 'Progam 'Lisp) 
     (eval @(writes 'Version ,@version)) (nl)
     (writes 'Email email) (nl)
     (writes 'Repo repo) (nl)
     (writes 'License license) (nl)
     (writes 'REPL)
-    ; TODO: BUG: Having a statement at the end that is not dependent on (read)
-    ; causes problems due to error propagation 
-    ; TODO: Pretty print repl integration
-    ; (def repl (fn () do t pgn (prompt) (print (eval (read))) (gc)))
-    (def repl (fn () do t pgn (prompt) (gc) (print (eval (read))) ))
+    (def repl 
+     (pgn
+       (set line (gensym))
+       (set running (gensym))
+       (eval (expand @(fn ()
+	 pgn
+	 (set ,line t)
+	 (history-load)
+	 (do
+	 (neq ,line '%)
+	 pgn
+	 (gc)
+	 (prompt)
+	 (set ,line (read))
+	 (if (neq ,line (eof)) (history-push ,line) nil)
+	 (pretty (eval ,line)))
+	 (history-save))))))
+    (repl)
     t)
   'ok)
-
-;(def ansi (eq (getenv 'COLOR) 'ON))
-(def ansi t)
-(def csi (fn () pgn (put 27) (put 91)))
-(def reset (fn () if ansi (pgn (csi) (put 48) (put 109) t) t))
-(def colors 
-     '(
-       (black . 0) (red . 1) (green . 2) 
-       (yellow . 3) (blue . 4) (magenta . 5)
-       (cyan . 6) (white . 7)))
-(def color 
-     (fn (c back bright) 
-	 if ansi
-	 (pgn 
-	   (csi) 
-	   (if bright (put 49) (put 48)) (put 59) 
-	   (if back (put 52) (put 51)) (put (add 48 (cdr (assoc c colors))))
-	   (put 109) t) t))
-(def black   (fn () color 'black nil t))
-(def red     (fn () color 'red nil t))
-(def green   (fn () color 'green nil t))
-(def yellow  (fn () color 'yellow nil t))
-(def blue    (fn () color 'blue nil t))
-(def magenta (fn () color 'magenta nil t))
-(def cyan    (fn () color 'cyan nil t))
-(def white   (fn () color 'white nil t))
-
-(def colorize
-     (fn (_)
-	 pgn
-	 (if (null _) (red) nil)
-	 (if (eq (type _) (type 1)) (blue) nil)
-	 (if (eq (type _) (type 'a)) (yellow) nil)
-	 (if (eq _ t) (green) nil)
-	 (if (eq (type _) (type add)) (magenta) nil)
-	 (if (eq (type _) (type id)) (cyan) nil)
-	 (write _)
-	 (reset)
-	 t))
-
-(def spaces
-     (fn (_)
-	 do 
-	 (more _ 0)
-	 pgn
-	 (space)
-	 (set _ (dec _))))
-
-(def lpar (fn () put 40))
-(def rpar (fn () put 41))
-(def double (fn (_) add _ _))
-
-(def _pretty 
-     (fn (n d)
-	 if (atom n) (colorize n)
-	 (pgn
-	   (nl)
-	   (spaces (double d))
-	   (lpar)
-	   (nl)
-	   (spaces (double (inc d)))
-	   (do
-	     (cons? n)
-	     pgn
-	     (_pretty (car n) (inc d))
-	     (set n (cdr n)))
-	   (nl)
-	   (spaces (double d))
-	   (rpar)
-	   (nl)
-	   (spaces (double d))
-	   t
-	   )))
-
-(def pp (fn (n) _pretty n 0))
-(def pretty (fn (n) _pretty n 0))
-
-(if extension (repl) nil)

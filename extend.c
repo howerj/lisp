@@ -201,6 +201,12 @@ static lisp_cell_t *lisp_prim_cell(lisp_t *l, lisp_cell_t *args, void *param) {
 }
 
 
+static lisp_cell_t *lisp_prim_param(lisp_t *l, lisp_cell_t *args, void *param) {
+	(void)l;
+	(void)args;
+	return (lisp_cell_t*)param;
+}
+
 int lisp_extend(lisp_t *l) {
 	if (lisp_asserts(l) < 0) return -1;
 	typedef struct { const char *name; lisp_function_t fn; void *arg; } lisp_extend_t;
@@ -226,6 +232,7 @@ int lisp_extend(lisp_t *l) {
 		{  "memory",   lisp_prim_memory,   NULL,    },
 		{  "gensym",   lisp_prim_gensym,   NULL,    },
 		{  "cell",     lisp_prim_cell,     NULL,    },
+		{  "eof",      lisp_prim_param,     l->Eof,  },
 	};
 	for (size_t i = 0; i < LISP_NELEMS(fns); i++) {
 		lisp_extend_t *f = &fns[i];

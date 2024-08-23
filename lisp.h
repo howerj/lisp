@@ -25,7 +25,7 @@ extern "C" {
 #endif
 
 #ifndef LISP_COLLECT_EVERY /* Call garbage collector every X allocations */
-#define LISP_COLLECT_EVERY (1024)
+#define LISP_COLLECT_EVERY (4096)
 #endif
 
 #ifndef LISP_EXTERN /* applied to API function declarations */
@@ -58,7 +58,7 @@ struct lisp { /* Should be opaque, do not mess with the internals */
 	void *arena /* passed to alloc */, *tag /* user defined tag */;
 	lisp_cell_t *interned /* interned symbols */, *env /* top level environment */, *current /* current env */,
 		    **gc_stack, /* garbage collection stack used in eval */
-		    *Nil, *Tee, *Fn, *Quote, *If, *Loop, *Define, *Set, *Progn, *Quasi, *Unquote, *Splice, *Error;
+		    *Nil, *Tee, *Eof, *Fn, *Quote, *If, *Loop, *Define, *Set, *Progn, *Quasi, *Unquote, *Splice, *Error;
 	lisp_gc_list_t *gc_head; /* list of all allocated cells */
 	int ungetch /* single character unget buffer */, depth /* saved recursion depth for eval */;
 	char *buf, *bufback; /* used to store symbols/strings whilst parsing */
@@ -73,7 +73,7 @@ LISP_EXTERN int lisp_function_add(lisp_t *l, const char *symbol, lisp_function_t
 LISP_EXTERN int lisp_unit_tests(lisp_t *l);
 LISP_EXTERN int lisp_gc(lisp_t *l, int force);
 LISP_EXTERN int lisp_deinit(lisp_t *l);
-LISP_EXTERN lisp_cell_t *lisp_read(lisp_t *l, int (*get)(void *param), void *param, int depth);
+LISP_EXTERN lisp_cell_t *lisp_read(lisp_t *l, int (*get)(void *param), void *param, int depth); /* Returns l->Eof on EOF */
 LISP_EXTERN lisp_cell_t *lisp_eval(lisp_t *l, int list, lisp_cell_t *exp, lisp_cell_t *env, int depth);
 LISP_EXTERN lisp_cell_t *lisp_assoc(lisp_t *l, lisp_cell_t *key, lisp_cell_t *alist); /* find sym in '((sym . val) ...) */
 
@@ -604,7 +604,7 @@ LISP_API lisp_cell_t *lisp_read(lisp_t *l, int (*get)(void *param), void *param,
 	assert(get);
 	intptr_t n = 0;
 	char *t = NULL;
-	if (!(t = lisp_token(l, get, param))) return NULL;
+	if (!(t = lisp_token(l, get, param))) return l->Eof;
 	if (!strcmp(t, ")")) return l->Error;
 	if (!strcmp(t, "(")) { 
 		lisp_cell_t *head = NULL, *r = NULL;
@@ -613,14 +613,15 @@ LISP_API lisp_cell_t *lisp_read(lisp_t *l, int (*get)(void *param), void *param,
 			if (!strcmp(t, ".")) {
 				if (!head || !r) return l->Error;
 				lisp_cell_t *v = lisp_read(l, get, param, depth + 1);
-				if (v == l->Error) return l->Error;
+				if (v == l->Error || v == l->Eof) return v;
 				lisp_setcdr(l, r, v);
-				if (!(t = lisp_token(l, get, param))) return l->Error;
+				if (!(t = lisp_token(l, get, param))) return l->Eof;
 				if (strcmp(t, ")")) return l->Error;
 				return head;
 			}
 			if (lisp_buf_putback(l) < 0) return l->Error;
 			lisp_cell_t *v = lisp_read(l, get, param, depth + 1);
+			if (v == l->Error || v == l->Eof) return v;
 			v = lisp_cons(l, v, l->Nil);
 			if (head)
 				lisp_setcdr(l, r, v);
@@ -628,14 +629,18 @@ LISP_API lisp_cell_t *lisp_read(lisp_t *l, int (*get)(void *param), void *param,
 				head = v;
 			r = v;
 		}
-		return NULL;
+		return l->Eof;
 	}
+	if (!strcmp(t, "%"))
+		return lisp_cons(l, l->Quote, l->Eof);
+	/*if (!strcmp(t, "!"))
+		return lisp_cons(l, l->Quote, l->Error);*/
 	if (!strcmp(t, "'"))
 		return lisp_cons(l, l->Quote, lisp_read(l, get, param, depth + 1));
 	if (!strcmp(t, "@"))
 		return lisp_cons(l, l->Quasi, lisp_read(l, get, param, depth + 1));
 	if (!strcmp(t, ",")) {
-		if (!(t = lisp_token(l, get, param))) return NULL;
+		if (!(t = lisp_token(l, get, param))) return l->Eof;
 		if (!strcmp(t, "@"))
 			return lisp_cons(l, l->Splice, lisp_read(l, get, param, depth + 1));
 		if (lisp_buf_putback(l) < 0) return l->Error;
@@ -752,7 +757,7 @@ static lisp_cell_t *lisp_prim_arith(lisp_t *l, lisp_cell_t *args, void *param) {
 	intptr_t n = lisp_compval(lisp_car(l, args)), op = (intptr_t)param;
 	for (args = lisp_cdr(l, args); lisp_ispropercons(l, args); args = lisp_cdr(l, args)) {
 		const intptr_t v = lisp_compval(lisp_car(l, args));
-		switch (op) { /* unsigned comparison operators are missing */
+		switch (op) {
 		case 1: n -= v; break;
 		case 2: n &= v; break;
 		case 3: n |= v; break;
@@ -760,8 +765,8 @@ static lisp_cell_t *lisp_prim_arith(lisp_t *l, lisp_cell_t *args, void *param) {
 		case 5: n *= v; break;
 		case 6: if (!v) return l->Error; n /= v; break;
 		case 7: if (!v) return l->Error; n %= v; break;
-		case 8: n <<= v; break;
-		case 9: n >>= v; break;
+		case 8: n = ((uintptr_t)n) << v; break;
+		case 9: n = ((uintptr_t)n) >> v; break;
 		case 10: n = n < v ? n : v; break;
 		case 11: n = n > v ? n : v; break;
 		case 0: default: n += v; break;
@@ -778,7 +783,7 @@ static lisp_cell_t *lisp_prim_comp(lisp_t *l, lisp_cell_t *args, void *param) {
 	intptr_t prev = lisp_compval(lisp_car(l, args)), op = (intptr_t)param;
 	for (args = lisp_cdr(l, args); lisp_ispropercons(l, args); args = lisp_cdr(l, args)) {
 		const intptr_t cur = lisp_compval(lisp_car(l, args));
-		switch (op) {
+		switch (op) { /* unsigned comparison operators are missing */
 		case 1: if (prev == cur) return l->Nil; break;
 		case 2: if (prev >= cur) return l->Nil; break;
 		case 3: if (prev >  cur) return l->Nil; break;
@@ -808,6 +813,7 @@ LISP_API int lisp_init(lisp_t *l) {
 	if (!(l->env = lisp_cons(l, lisp_cons(l, l->Nil, l->Nil), l->Nil))) goto fail;
 	if (!(l->Tee     = lisp_intern(l, "t"))) goto fail;
 	if (!(lisp_define(l, l->env, l->Tee, l->Tee))) goto fail;
+	if (!(l->Eof     = lisp_intern(l, "%"))) goto fail;
 	if (!(l->Quote   = lisp_intern(l, "quote"))) goto fail; /* these definitions could be static */
 	if (!(l->If      = lisp_intern(l, "if"))) goto fail;
 	if (!(l->Loop    = lisp_intern(l, "do"))) goto fail;
@@ -969,7 +975,7 @@ int main(void) {
 	if (lisp_init(l) < 0) return 1;
 	if (lisp_function_add(l, "in", lisp_prim_read, &io) < 0) goto fail;
 	if (lisp_function_add(l, "out", lisp_prim_write, &io) < 0) goto fail;
-	for (lisp_cell_t *c = NULL;(c = lisp_read(l, lisp_get_ch, io.in, 0));) {
+	for (lisp_cell_t *c = NULL; l->Eof != (c = lisp_read(l, lisp_get_ch, io.in, 0));) {
 		if (!(c = lisp_eval(l, 0, c, l->env, 0))) goto fail;
 		if (lisp_write(l, lisp_put_ch, io.out, c, 0) < 0) goto fail;
 		if (fputc('\n', (FILE*)io.out) != '\n') goto fail;
