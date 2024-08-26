@@ -1,7 +1,8 @@
-; Richard James Howe, Public Domain, 
-; https://github.com/howerj/lisp
-; howe.r.j.89@gmail.com
-; Lisp Test Code
+; * Richard James Howe
+; * License Public Domain,
+; * Repo: <https://github.com/howerj/lisp>
+; * Email: <mailto:howe.r.j.89@gmail.com>
+; * Lisp Library and Test Code
 
 ; Library Code
 '(Loading Lush Lisp Library...)
@@ -41,6 +42,8 @@
   (def popcnt (fn (n) pgn (set r 0) (if (eq 0 n) 0 (do (bool n) pgn (set r (if (neq 0 (band n 1)) (inc r) (id r))) (set n (lrs n 1)) (id r)))))
   (def gcd (fn (n m) if (eq m 0) n (gcd m (mod n m))))
   (def lcm (fn (n m) div (mul n m) (gcd n m)))
+  (def sum-of-squares (fn (x y) add (mul x x) (mul y y)))
+  (def square (fn (x) mul x x))
   (def reverse 
      (fn (x) 
          pgn
@@ -84,13 +87,38 @@
   (def nth (fn (n l) pgn (set l (nthcar n l)) (if (cons? l) (car l) nil)))
   (def append 
      (fn (x y)
-	 if (null x) y
-	 (cons (car x) (append (cdr x) y))))
+         if (null x) y
+         (cons (car x) (append (cdr x) y))))
   (def flatten
      (fn (l)
-	 if (null l) l
-	 (if (atom l) (list l)
-	   (append (flatten (car l)) (flatten (cdr l))))))
+         if (null l) l
+         (if (atom l) (list l)
+           (append (flatten (car l)) (flatten (cdr l))))))
+  (def subst
+    (fn (to from tree)
+      if (atom tree)
+      (if (eq tree from) to tree)
+      (cons (subst to from (car tree))
+	    (subst to from (cdr tree)))))
+  (def last
+     (fn (l)
+	 pgn
+	 (set r (car l))
+	 (do
+	   (cons? l)
+	   pgn
+	   (set r (car l))
+	   (set l (cdr l))
+	   (id r))))
+  (def seed 1) ; Global Pseudo Random Number State
+  (def random ; XORSHIFT32, although not capped if 64-bit
+     (fn ()
+	 if (eq seed 0) 
+	 (set seed 1)
+	 (pgn
+	   (set seed (bxor seed (lls seed 13)))
+	   (set seed (bxor seed (lrs seed 7)))
+	   (set seed (bxor seed (lls seed 17))))))
   (def history ())
   (def history? (fn (n) nth n history))
   (def history-push (fn (e) if (eq ! e) history (if (eq % e) history (set history (cons e history)))))
@@ -158,9 +186,14 @@
   (test (gcd 99 3) 3)
   (test (gcd 1 1) 1)
   (test (lcm 0 0) '!)
+  (test (last '(1 2)) 2)
+  (test (last '(1)) 1)
+  (test (last '(1 2 3)) 3)
+  (test (equal (subst 'x 'y '(x y 1 2))) '(x x 1 2))
+  (test (sum-of-squares 3 4) 25)
   (if (neq ok '!) 'ok ok))
 
-; TODO: COND, AND, OR, MAP, META, test EVLIS, more tests
+; TODO: COND, AND, OR, MAP, META, more tests
 
 (def fold ; TODO: Work for `list` ?
      (pgn
@@ -194,12 +227,12 @@
        (eval (expand @(fn (,f ,l)
          pgn
          (set ,r nil)
-         (do
+         (reverse (do
            (cons? ,l)
            pgn
            (set ,r (cons (eval (list ,f (car ,l))) ,r))
            (set ,l (cdr ,l))
-           (id ,r)))))))
+           (id ,r))))))))
     (def + (fn _ apply add _))
     (def * (fn _ apply mul _))
     (def / (fn _ apply div _))
@@ -270,7 +303,7 @@
                  pgn
                  (_pretty (car n) (inc d))
                  (set n (cdr n)))
-	       (if (null n) t (pgn (put 46) (space) (_pretty n (inc d))))
+               (if (null n) t (pgn (put 46) (space) (_pretty n (inc d))))
                (nl)
                (spaces (double d))
                (rpar)
@@ -292,18 +325,122 @@
        (set line (gensym))
        (set running (gensym))
        (eval (expand @(fn ()
-	 pgn
-	 (set ,line t)
-	 (history-load)
-	 (do
-	 (neq ,line '%)
-	 pgn
-	 (gc)
-	 (prompt)
-	 (set ,line (read))
-	 (if (neq ,line (eof)) (history-push ,line) nil)
-	 (pretty (eval ,line)))
-	 (history-save))))))
+         pgn
+         (set ,line t)
+         (history-load)
+         (do
+         (neq ,line '%)
+         pgn
+         (gc)
+         (prompt)
+         (set ,line (read))
+         (if (neq ,line (eof)) (history-push ,line) nil)
+         (pretty (eval ,line)))
+         (history-save))))))
     (repl)
     t)
   'ok)
+
+
+
+; 
+; 
+; 
+; (let
+;   (sort-insert 
+;     (compile "" 
+;       (x l)
+;       (if 
+;         is-nil.l
+;         (list x)
+;         (if 
+;           (<= x car.l)
+;           (cons x l)
+;           (cons 
+;             (car l)
+;             ('sort-insert x (cdr l)))))))
+;   (define sort
+;     (compile
+;       "A super inefficient sort on a list of integers/floats or strings"
+;       (l)
+;       (if is-nil.l
+;         nil
+;         (sort-insert 
+;           car.l 
+;           (sort cdr.l))))))
+; 
+; (define is-list-of-atoms
+;   (compile
+;     "is 'l a list of atoms?"
+;     (l)
+;     (cond
+;       (is-nil.l t)
+;       (is-atom.car.l (is-list-of-atoms (cdr l)))
+;       (t nil))))
+; 
+; (define member
+;   (compile
+;     "find an atom in a list of atoms"
+;     (a lat)
+;     (cond
+;       ((is-nil lat) ())
+;       (t (or (equal car.lat a)
+;              (member a cdr.lat))))))
+; 
+; (define remove-member 
+;   (compile
+;     "remove a member from a list of atoms"
+;     (a lat)
+;     (cond
+;       (is-nil.lat nil)
+;       ((equal car.lat a) (remove-member a cdr.lat))
+;       (t (cons car.lat
+;                (remove-member a cdr.lat))))))
+; 
+; (define list-tail
+;   (compile
+;     "exclude all the elements from 0 to k in a list"
+;     (l k)
+;     (cond
+;       ((is-zero k) l)
+;       (t (list-tail (cdr l) (- k 1))))))
+; 
+; (define list-head 
+;   (compile
+;     "get all the elements from 0 to k in a list"
+;     (l k)
+;     (cond
+;       ((is-zero k) (cons (car l) nil))
+;       (t (cons (car l) (list-head (cdr l) (- k 1)))))))
+; 
+; (define sublist
+;   (compile
+;     "get a sub sequence from a list"
+;     (l start end)
+;     (list-tail (list-head l end) start)))
+; 
+; (define random-element
+;   (compile
+;     "pick a random element from a list"
+;     (x)
+;     (if is-list.x
+;       (let
+;         (ll (% (abs (random)) length.x))
+;         (car (sublist x ll ll)))
+;       x)))
+; 
+; (define sum-of-squares 
+;   (compile
+;     "return the sum of the squares of two numbers"
+;     (x y) 
+;     (+ (* x x) (* y y))))
+; 
+; (define defun
+;   (flambda "define a new function" (x)
+;            (let 
+;              (name (car x))
+;              (doc  (cadr x))   ; documentation string
+;              (args (caddr x))  ; function arguments
+;              (code (cadddr x))
+;              (eval (list define name (list lambda doc args code)) (environment)))))
+; 

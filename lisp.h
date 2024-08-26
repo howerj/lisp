@@ -602,7 +602,7 @@ LISP_API lisp_cell_t *lisp_read(lisp_t *l, int (*get)(void *param), void *param,
 	if (lisp_init(l) < 0) return NULL;
 	if (LISP_MAX_DEPTH && depth > LISP_MAX_DEPTH) return l->Error;
 	assert(get);
-	intptr_t n = 0;
+	intptr_t n = 0; /* TODO: Avoid using in band signaling for EOF. Always return a CONS (error . expr ). */
 	char *t = NULL;
 	if (!(t = lisp_token(l, get, param))) return l->Eof;
 	if (!strcmp(t, ")")) return l->Error;

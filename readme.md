@@ -101,7 +101,7 @@ interned) but that would add a lot of size to the interpreter.
 * [klisp](http://t3x.org/klisp) is a tiny public domain lisp with more 
   functionality (although it has other limitations) that concepts could be
   borrowed from, specifically around macros.
-* Internally pointers are used, instead there are advantages of using
+* Pointers are used in the implementation, instead there are advantages of using
   integers (especially integers of type `intptr_t`) and offsets into
   an array such as; being able to serialize the LISP interpreters state,
   being able to borrow bits from pointers for other purposes, ability 
