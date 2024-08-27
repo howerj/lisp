@@ -5,6 +5,11 @@
 ; * Lisp Library and Test Code
 
 ; Library Code
+;
+; Many of these words could be (and should be) rewritten to use loops instead
+; of recursion due to interpreter limitations. Another aspect is that functions
+; should have all variables that can be bound, bound, when creating the lambda,
+; this mainly goes for calling other functions and primitives.
 '(Loading Lush Lisp Library...)
 (pgn
   (def version '(1 0 0))
@@ -42,8 +47,8 @@
   (def popcnt (fn (n) pgn (set r 0) (if (eq 0 n) 0 (do (bool n) pgn (set r (if (neq 0 (band n 1)) (inc r) (id r))) (set n (lrs n 1)) (id r)))))
   (def gcd (fn (n m) if (eq m 0) n (gcd m (mod n m))))
   (def lcm (fn (n m) div (mul n m) (gcd n m)))
-  (def sum-of-squares (fn (x y) add (mul x x) (mul y y)))
-  (def square (fn (x) mul x x))
+  (def square (fn (_) mul _ _))
+  (def double (fn (_) add _ _))
   (def reverse 
      (fn (x) 
          pgn
@@ -99,31 +104,77 @@
       if (atom tree)
       (if (eq tree from) to tree)
       (cons (subst to from (car tree))
-	    (subst to from (cdr tree)))))
+            (subst to from (cdr tree)))))
   (def last
      (fn (l)
-	 pgn
-	 (set r (car l))
-	 (do
-	   (cons? l)
-	   pgn
-	   (set r (car l))
-	   (set l (cdr l))
-	   (id r))))
-  (def seed 1) ; Global Pseudo Random Number State
+         pgn
+         (set r (car l))
+         (do
+           (cons? l)
+           pgn
+           (set r (car l))
+           (set l (cdr l))
+           (id r))))
   (def random ; XORSHIFT32, although not capped if 64-bit
-     (fn ()
-	 if (eq seed 0) 
-	 (set seed 1)
-	 (pgn
-	   (set seed (bxor seed (lls seed 13)))
-	   (set seed (bxor seed (lrs seed 7)))
-	   (set seed (bxor seed (lls seed 17))))))
+       ((fn () pgn ; Form closure hiding global state `seed`
+            (set seed (add nil)) ; Get pointer value of `nil`, hopefully will change each run (Address space layout randomization?)
+            (set seed (if (eq seed 0) 1 seed)) ; Must never be zero, never will be
+            (fn ()
+                pgn
+                  (set seed (bxor seed (lls seed 13)))
+                  (set seed (bxor seed (lrs seed 7)))
+                  (set seed (bxor seed (lls seed 17)))))))
+  (def lat? ; List Of Atoms?
+   (fn (l)
+     if (null l) t
+     (if (atom (car l)) (lat? (cdr l)) nil)))
+  (def sort
+     ((fn ()
+         pgn
+         (set sort-insert
+         (fn (x l)
+         if 
+           (null l)
+           (list x)
+           (if 
+             (leq x (car l))
+             (cons x l)
+             (cons 
+               (car l)
+               (sort-insert x (cdr l))))))
+     (fn (l) ; Super inefficient numeric only sort
+       if (null l)
+         nil
+         (sort-insert 
+           (car l)
+           (sort (cdr l)))))))
+  (def member ; Find `a` in list of atoms
+     (fn (a lat) 
+         if (atom lat) nil
+         (if (eq (car lat) a)
+           t (member a (cdr lat)))))
+  (def list-tail ; Exclude all the elements from 0 to k in a list
+     (fn (l k)
+       if (eq k 0) l
+        (list-tail (cdr l) (sub k 1))))
+  (def list-head ; Get all the elements from 0 to k in a list
+      (fn (l k)
+        if (eq k 0) (cons (car l) nil)
+        (cons (car l) (list-head (cdr l) (sub k 1)))))
+  (def sublist
+      (fn (l start end)
+       list-tail (list-head l end) start))
+  (def random-element ; pick a random element from a list
+      (fn (l)
+        pgn
+        (set item (mod (abs (random)) (length l)))
+        (car (sublist l item item))))
   (def history ())
   (def history? (fn (n) nth n history))
   (def history-push (fn (e) if (eq ! e) history (if (eq % e) history (set history (cons e history)))))
   (def history-pop (fn () if history (set history (cdr history)) nil))
   (def history-clear (fn () set history ()))
+  (def counter (fn (cnt inc) pgn (fn () set cnt (add cnt inc))))
   'ok)
 
 'BIST ; A set of Built In Self Tests
@@ -190,28 +241,17 @@
   (test (last '(1)) 1)
   (test (last '(1 2 3)) 3)
   (test (equal (subst 'x 'y '(x y 1 2))) '(x x 1 2))
-  (test (sum-of-squares 3 4) 25)
+  (test (equal (subst 'x 'y '((x) z (y))) '((x) z (x))))
+  (test (lat? '(1 2 3)) t)
+  (test (lat? '(1 2 (3))) nil)
+  (test (lat? '(1 (2) 3)) nil)
+  (test (lat? '((1) 2 3)) nil)
+  (test (equal (sort '(2 1 3 4)) '(1 2 3 4)) t)
+; (test (sum-of-squares 3 4) 25)a
   (if (neq ok '!) 'ok ok))
 
 ; TODO: COND, AND, OR, MAP, META, more tests
-
-(def fold ; TODO: Work for `list` ?
-     (pgn
-       (set f (gensym))
-       (set l (gensym))
-       (set r (gensym))
-       (eval (expand @(fn (,f ,l)
-       if (atom ,l) ,l
-       (if (atom (cdr ,l)) (car ,l)
-        (pgn
-         (set ,r (car ,l))
-         (set ,l (cdr ,l))
-         (do
-          (cons? ,l)
-          pgn
-          (set ,r (eval (list ,f ,r (car ,l))))
-          (set ,l (cdr ,l))
-          (id ,r)))))))))
+; TODO: Clean up syntax (e.g. `do (cond) pgn ...` -> do (cond) ...`
 
 (if extension
   (pgn 
@@ -233,14 +273,34 @@
            (set ,r (cons (eval (list ,f (car ,l))) ,r))
            (set ,l (cdr ,l))
            (id ,r))))))))
+    (def fold ; TODO: Work for `list` ?
+     (pgn
+       (set f (gensym))
+       (set l (gensym))
+       (set r (gensym))
+       (eval (expand @(fn (,f ,l)
+       if (atom ,l) ,l
+       (if (atom (cdr ,l)) (car ,l)
+        (pgn
+         (set ,r (car ,l))
+         (set ,l (cdr ,l))
+         (do
+          (cons? ,l)
+          pgn
+          (set ,r (eval (list ,f ,r (car ,l))))
+          (set ,l (cdr ,l))
+          (id ,r)))))))))
+    (def sum-of-squares (fn l fold add (mapcar square l)))
     (def + (fn _ apply add _))
     (def * (fn _ apply mul _))
     (def / (fn _ apply div _))
     (def - (fn _ apply sub _))
     (def = (fn _ apply eq _))
+    (def /= (fn _ apply neq _))
     (def & (fn _ apply band _))
     (def | (fn _ apply bor _))
     (def ^ (fn _ apply bxor _))
+    (def ~ (fn _ invert _))
     (def nl (fn () put 10))
     (def tab (fn () put 9))
     (def space (fn () put 32))
@@ -250,8 +310,8 @@
     (def print (fn (_) pgn (set _ (write _)) (nl) (bool _)))
     (def writes (fn _ do (cons? _) pgn (out (car _)) (set _ (cdr _)) t))
     (def ansi t) ; (def ansi (eq (getenv 'COLOR) 'ON))
-    (def csi (fn () pgn (put 27) (put 91)))
-    (def reset (fn () if ansi (pgn (csi) (put 48) (put 109) t) t))
+    (def csi (fn () pgn (put 27) (put '[)))
+    (def reset (fn () if ansi (pgn (csi) (put 48) (put 'm) t) t))
     (def colors 
          '(
            (black . 0) (red . 1) (green . 2) 
@@ -264,7 +324,7 @@
                (csi) 
                (if bright (put 49) (put 48)) (put 59) 
                (if back (put 52) (put 51)) (put (add 48 (cdr (assoc c colors))))
-               (put 109) t) t))
+               (put 'm) t) t))
     (def black   (fn () color 'black nil t))
     (def red     (fn () color 'red nil t))
     (def green   (fn () color 'green nil t))
@@ -288,7 +348,6 @@
     (def spaces (fn (_) do (more _ 0) pgn (space) (set _ (dec _))))
     (def lpar (fn () put 40))
     (def rpar (fn () put 41))
-    (def double (fn (_) add _ _))
     (def _pretty 
          (fn (n d)
              if (atom n) (colorize n)
@@ -319,6 +378,7 @@
     (writes 'Email email) (nl)
     (writes 'Repo repo) (nl)
     (writes 'License license) (nl)
+    (writes 'Nil 'is (add nil)) (nl)
     (writes 'REPL)
     (def repl 
      (pgn
@@ -342,51 +402,7 @@
   'ok)
 
 
-
-; 
-; 
-; 
-; (let
-;   (sort-insert 
-;     (compile "" 
-;       (x l)
-;       (if 
-;         is-nil.l
-;         (list x)
-;         (if 
-;           (<= x car.l)
-;           (cons x l)
-;           (cons 
-;             (car l)
-;             ('sort-insert x (cdr l)))))))
-;   (define sort
-;     (compile
-;       "A super inefficient sort on a list of integers/floats or strings"
-;       (l)
-;       (if is-nil.l
-;         nil
-;         (sort-insert 
-;           car.l 
-;           (sort cdr.l))))))
-; 
-; (define is-list-of-atoms
-;   (compile
-;     "is 'l a list of atoms?"
-;     (l)
-;     (cond
-;       (is-nil.l t)
-;       (is-atom.car.l (is-list-of-atoms (cdr l)))
-;       (t nil))))
-; 
-; (define member
-;   (compile
-;     "find an atom in a list of atoms"
-;     (a lat)
-;     (cond
-;       ((is-nil lat) ())
-;       (t (or (equal car.lat a)
-;              (member a cdr.lat))))))
-; 
+ 
 ; (define remove-member 
 ;   (compile
 ;     "remove a member from a list of atoms"
@@ -397,44 +413,6 @@
 ;       (t (cons car.lat
 ;                (remove-member a cdr.lat))))))
 ; 
-; (define list-tail
-;   (compile
-;     "exclude all the elements from 0 to k in a list"
-;     (l k)
-;     (cond
-;       ((is-zero k) l)
-;       (t (list-tail (cdr l) (- k 1))))))
-; 
-; (define list-head 
-;   (compile
-;     "get all the elements from 0 to k in a list"
-;     (l k)
-;     (cond
-;       ((is-zero k) (cons (car l) nil))
-;       (t (cons (car l) (list-head (cdr l) (- k 1)))))))
-; 
-; (define sublist
-;   (compile
-;     "get a sub sequence from a list"
-;     (l start end)
-;     (list-tail (list-head l end) start)))
-; 
-; (define random-element
-;   (compile
-;     "pick a random element from a list"
-;     (x)
-;     (if is-list.x
-;       (let
-;         (ll (% (abs (random)) length.x))
-;         (car (sublist x ll ll)))
-;       x)))
-; 
-; (define sum-of-squares 
-;   (compile
-;     "return the sum of the squares of two numbers"
-;     (x y) 
-;     (+ (* x x) (* y y))))
-; 
 ; (define defun
 ;   (flambda "define a new function" (x)
 ;            (let 
@@ -443,4 +421,5 @@
 ;              (args (caddr x))  ; function arguments
 ;              (code (cadddr x))
 ;              (eval (list define name (list lambda doc args code)) (environment)))))
-; 
+;
+
