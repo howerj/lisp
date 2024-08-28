@@ -3,6 +3,7 @@
 #define LISP_API static inline
 #define LISP_EXTERN LISP_API
 #include "lisp.h"
+#include <time.h>
 
 static lisp_cell_t *lisp_prim_assoc(lisp_t *l, lisp_cell_t *args, void *param) { 
 	(void)param; 
@@ -150,7 +151,9 @@ static lisp_cell_t *lisp_prim_memory(lisp_t *l, lisp_cell_t *args, void *param) 
 		lisp_cons(l, lisp_mkint(l, a->reallocs),
 		lisp_cons(l, lisp_mkint(l, LISP_ARENA_SIZE),
 		lisp_cons(l, lisp_mkint(l, i),
-		l->Nil))))));
+		lisp_cons(l, lisp_mkint(l, l->buf_size),
+		lisp_cons(l, lisp_mkint(l, l->gc_stack_allocated),
+		l->Nil))))))));
 }
 
 static lisp_cell_t *lisp_prim_gensym(lisp_t *l, lisp_cell_t *args, void *param) {
@@ -192,6 +195,12 @@ static lisp_cell_t *lisp_prim_param(lisp_t *l, lisp_cell_t *args, void *param) {
 	return (lisp_cell_t*)param;
 }
 
+static lisp_cell_t *lisp_prim_time(lisp_t *l, lisp_cell_t *args, void *param) {
+	(void)args;
+	(void)param;
+	return lisp_mkint(l, time(NULL));
+}
+
 int lisp_extend(lisp_t *l) {
 	if (lisp_asserts(l) < 0) return -1;
 	typedef struct { const char *name; lisp_function_t fn; void *arg; } lisp_extend_t;
@@ -218,6 +227,7 @@ int lisp_extend(lisp_t *l) {
 		{  "gensym",   lisp_prim_gensym,   NULL,    },
 		{  "cell",     lisp_prim_cell,     NULL,    },
 		{  "eof",      lisp_prim_param,    l->Eof,  },
+		{  "time",     lisp_prim_time,     NULL,    },
 	};
 	for (size_t i = 0; i < LISP_NELEMS(fns); i++) {
 		lisp_extend_t *f = &fns[i];

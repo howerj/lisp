@@ -50,7 +50,6 @@ struct lisp_cell {
 	union { void *v; intptr_t n; lisp_cell_t *l; lisp_function_t fn; char s[sizeof (char*)]; } t[];
 };
 
-typedef struct { uintptr_t state; lisp_cell_t *obj; } lisp_stack_t;
 typedef struct gc_list { lisp_cell_t *ref; struct gc_list *next; } lisp_gc_list_t;
 
 struct lisp { /* Should be opaque, do not mess with the internals */
@@ -85,13 +84,13 @@ LISP_EXTERN char *lisp_string_reverse(char *s, size_t length); /* Modifies Argum
 LISP_EXTERN lisp_cell_t *lisp_make_string(lisp_t *l, int type, size_t length, const char *string);
 LISP_EXTERN lisp_cell_t *lisp_make_object(lisp_t *l, int type, size_t count, ...);
 /* Lisp Cell property manipulation function */
-static inline int lisp_type_get(lisp_cell_t *c) { if (!c) return LISP_INVALID; assert(c); return c->tag & 0x7; }
-static inline void lisp_type_set(lisp_cell_t *c, int type) { assert(c); assert(type <= 7); c->tag = type | (c->tag & ~7ull); }
-static inline int lisp_gc_get(lisp_cell_t *c) { assert(c); return (c->tag >> 3) & 0x1; }
-static inline void lisp_gc_set(lisp_cell_t *c, int gc) { assert(c); assert(gc <= 3); c->tag = (gc << 3) | (c->tag & ~(1ull << 3)); }
-static inline size_t lisp_length_get(lisp_cell_t *c) { assert(c); return c->tag >> 4; }
-static inline int lisp_length_valid(uintptr_t length) { return length < (1ull << ((sizeof(uintptr_t)*8) - 4)); }
-static inline void lisp_length_set(lisp_cell_t *c, uintptr_t length) { assert(c); assert(lisp_length_valid(length)); c->tag = length << 4 | (c->tag & 15); }
+static inline int lisp_type_get(lisp_cell_t *c) { if (!c) return LISP_INVALID; assert(c); return c->tag & 15; }
+static inline void lisp_type_set(lisp_cell_t *c, int type) { assert(c); assert(type <= 15); c->tag = type | (c->tag & ~15ull); }
+static inline int lisp_gc_get(lisp_cell_t *c) { assert(c); return (c->tag >> 4) & 0x1; }
+static inline void lisp_gc_set(lisp_cell_t *c, int gc) { assert(c); assert(gc == 1 || gc == 0); c->tag = (gc << 4) | (c->tag & ~(1ull << 4)); }
+static inline size_t lisp_length_get(lisp_cell_t *c) { assert(c); return c->tag >> 5; }
+static inline int lisp_length_valid(uintptr_t length) { return length < (1ull << ((sizeof(uintptr_t)*8) - 5)); }
+static inline void lisp_length_set(lisp_cell_t *c, uintptr_t length) { assert(c); assert(lisp_length_valid(length)); c->tag = length << 5 | (c->tag & 31); }
 /* Lisp Cell helper function */
 static inline int lisp_iscons(lisp_cell_t *c) { assert(c); return lisp_type_get(c) == LISP_CONS; }
 static inline int lisp_isnil(lisp_t *l, lisp_cell_t *c) { lisp_asserts(l); if (!c) { l->fatal = 1; return 0; } return c == l->Nil; }
@@ -328,8 +327,9 @@ LISP_API lisp_cell_t *lisp_assoc(lisp_t *l, lisp_cell_t *key, lisp_cell_t *alist
 	lisp_asserts(l);
 	assert(key);
 	assert(alist);
+	const intptr_t k = lisp_compval(key);
 	for (;!lisp_isnil(l, alist); alist = lisp_cdr(l, alist))
-		if (lisp_car(l, lisp_car(l, alist)) == key) return lisp_car(l, alist);
+		if (lisp_compval(lisp_car(l, lisp_car(l, alist))) == k) return lisp_car(l, alist);
 	return l->Nil;
 }
 
