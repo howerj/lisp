@@ -139,4 +139,5 @@ interned) but that would add a lot of size to the interpreter.
 * <https://justine.lol/sectorlisp2/>
 * <https://www.lispmachine.net/books/LISP_1.5_Programmers_Manual.pdf>
 * <https://en.wikipedia.org/wiki/Lisp_(programming_language)>
-* <http://t3x.org/klisp>
+* <http://t3x.org/klisp> (there are multiple great Lisp implementations on this
+  site, in the public domain as well, one of which is VM based).

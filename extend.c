@@ -4,6 +4,7 @@
 #define LISP_EXTERN LISP_API
 #include "lisp.h"
 #include <time.h>
+#include <signal.h>
 
 static lisp_cell_t *lisp_prim_assoc(lisp_t *l, lisp_cell_t *args, void *param) { 
 	(void)param; 
@@ -201,7 +202,18 @@ static lisp_cell_t *lisp_prim_time(lisp_t *l, lisp_cell_t *args, void *param) {
 	return lisp_mkint(l, time(NULL));
 }
 
-int lisp_extend(lisp_t *l) {
+static lisp_cell_t *lisp_prim_clock(lisp_t *l, lisp_cell_t *args, void *param) {
+	(void)param;
+	const int div = lisp_isnil(l, lisp_car(l, args));
+	return lisp_mkint(l, div ? clock() / CLOCKS_PER_SEC : clock());
+}
+
+static lisp_cell_t *lisp_prim_raise(lisp_t *l, lisp_cell_t *args, void *param) {
+	(void)param;
+	return lisp_mkint(l, raise(lisp_compval(lisp_car(l, args))));
+}
+
+int lisp_extend(lisp_t *l) { /* We could put some stuff in `atexit` maybe */
 	if (lisp_asserts(l) < 0) return -1;
 	typedef struct { const char *name; lisp_function_t fn; void *arg; } lisp_extend_t;
 	lisp_extend_t fns[] = {
@@ -228,6 +240,8 @@ int lisp_extend(lisp_t *l) {
 		{  "cell",     lisp_prim_cell,     NULL,    },
 		{  "eof",      lisp_prim_param,    l->Eof,  },
 		{  "time",     lisp_prim_time,     NULL,    },
+		{  "raise",    lisp_prim_raise,    NULL,    },
+		{  "clock",    lisp_prim_clock,    NULL,    },
 	};
 	for (size_t i = 0; i < LISP_NELEMS(fns); i++) {
 		lisp_extend_t *f = &fns[i];

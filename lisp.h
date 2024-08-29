@@ -424,7 +424,7 @@ again:
 			goto again;
 		} else if (op == l->Loop) {
 			lisp_cell_t *last = l->Nil, *cond = lisp_car(l, n);
-			exp = l->add_progn ? lisp_cons(l, l->Progn, lisp_cdr(l, n)) : lisp_cdr(l, n);
+			exp = lisp_cons(l, l->Progn, lisp_cdr(l, n));
 			gc_saved_stack = l->gc_stack_used;
 			for (;last != l->Error;) {
 				lisp_cell_t *res = lisp_eval(l, 0, cond, env, depth + 1);
