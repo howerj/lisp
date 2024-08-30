@@ -32,9 +32,17 @@ The language consists of the following built in functions:
 * `add`, `sub`, `band`, `bor`, `bxor`, `mul`, `div`, `mod`, `lls`, `lrs`, `min`,
   `max` are the arithmetic and bitwise operators
 * `eq`, `neq`, `less`, `leq`, `more`, `meq`, the comparison operators
+* `fexpr`, create a function which passes its arguments un-evaluted 
+* `eval`, `(eval '(expr) '(optional-env))`
+* `assoc`, `(assoc 'x '(assoc-list))`
+* `evlis`, `(eval '(expr expr...) '(optional-evn))`
+* `expand`, `(expand '(expr) '(optional-env))`
+* `gensym`, `(gensym)`
+* `env`, `(env)`, `(env t)`, `(env nil)`, `(env proc)`
 * `!`, `(!)`, signal an error condition. This happens on many error
 conditions with no way to tell what caused it. It usually causes any
 expression to return an error as well.
+* `%`, signal EOF when reading.
 * `t`, true, although in this lisp anything not nil is true including 0
 * `nil`/`()`, false, end of a list
 

@@ -25,7 +25,7 @@ extern "C" {
 #endif
 
 #ifndef LISP_COLLECT_EVERY /* Call garbage collector every X allocations */
-#define LISP_COLLECT_EVERY (4096)
+#define LISP_COLLECT_EVERY (8192)
 #endif
 
 #ifndef LISP_EXTERN /* applied to API function declarations */
@@ -36,7 +36,7 @@ extern "C" {
 #define LISP_API
 #endif
 
-enum { LISP_INVALID, LISP_CONS, LISP_SYMBOL, LISP_INTEGER, LISP_FUNCTION, LISP_PRIMITIVE, };
+enum { LISP_INVALID, LISP_CONS, LISP_SYMBOL, LISP_INTEGER, LISP_FUNCTION, LISP_PRIMITIVE, LISP_FEXPR, };
 
 struct lisp;
 typedef struct lisp lisp_t;
@@ -57,7 +57,7 @@ struct lisp { /* Should be opaque, do not mess with the internals */
 	void *arena /* passed to alloc */, *tag /* user defined tag */;
 	lisp_cell_t *interned /* interned symbols */, *env /* top level environment */, *current /* current env */,
 		    **gc_stack, /* garbage collection stack used in eval */
-		    *Nil, *Tee, *Eof, *Fn, *Quote, *If, *Loop, *Define, *Set, *Progn, *Quasi, *Unquote, *Splice, *Error;
+		    *Nil, *Tee, *Eof, *Fn, *Fexpr, *Quote, *If, *IfNot, *Loop, *Define, *Set, *Progn, *Quasi, *Unquote, *Splice, *Error;
 	lisp_gc_list_t *gc_head; /* list of all allocated cells */
 	int ungetch /* single character unget buffer */, depth /* saved recursion depth for eval */;
 	char *buf, *bufback; /* used to store symbols/strings whilst parsing */
@@ -102,15 +102,17 @@ static inline intptr_t lisp_intval(lisp_cell_t *c) { assert(c); assert(lisp_type
 static inline intptr_t lisp_ptrval(lisp_cell_t *c) { assert(c); return c->t[0].n; }
 static inline intptr_t lisp_compval(lisp_cell_t *c) { assert(c); return lisp_type_get(c) == LISP_INTEGER ? lisp_ptrval(c) : (intptr_t)c; }
 static inline const char *lisp_strval(lisp_cell_t *c) { assert(c); assert(lisp_type_get(c) == LISP_SYMBOL); return c->t[0].s; }
-static inline lisp_cell_t *lisp_procargs(lisp_cell_t *c) { assert(c); assert(lisp_type_get(c) == LISP_FUNCTION); return c->t[0].l; }
-static inline lisp_cell_t *lisp_proccode(lisp_cell_t *c) { assert(c); assert(lisp_type_get(c) == LISP_FUNCTION); return c->t[1].l; }
-static inline lisp_cell_t *lisp_procenv(lisp_cell_t *c) { assert(c); assert(lisp_type_get(c) == LISP_FUNCTION); return c->t[2].l; }
+static inline int lisp_isproclike(lisp_cell_t *c) { assert(c); const int r = lisp_type_get(c); return r == LISP_FUNCTION || r == LISP_FEXPR; }
+static inline lisp_cell_t *lisp_procargs(lisp_cell_t *c) { assert(c); assert(lisp_isproclike(c)); return c->t[0].l; }
+static inline lisp_cell_t *lisp_proccode(lisp_cell_t *c) { assert(c); assert(lisp_isproclike(c)); return c->t[1].l; }
+static inline lisp_cell_t *lisp_procenv(lisp_cell_t *c) { assert(c); assert(lisp_isproclike(c)); return c->t[2].l; }
 static inline lisp_function_t lisp_primop(lisp_cell_t *c) { assert(c); assert(lisp_type_get(c) == LISP_PRIMITIVE); return c->t[0].fn; }
 static inline lisp_cell_t *lisp_cons(lisp_t *l, lisp_cell_t *car, lisp_cell_t *cdr) { return lisp_make_object(l, LISP_CONS, 2, car, cdr); }
 static inline lisp_cell_t *lisp_mksym(lisp_t *l, const char *sym) { return lisp_make_string(l, LISP_SYMBOL, strlen(sym), sym); }
 static inline lisp_cell_t *lisp_mkprimop(lisp_t *l, lisp_function_t fn, void *param) { return lisp_make_object(l, LISP_PRIMITIVE, 2, fn, param); }
 static inline lisp_cell_t *lisp_mkint(lisp_t *l, intptr_t n) { return lisp_make_object(l, LISP_INTEGER, 1, n); }
 static inline lisp_cell_t *lisp_mkproc(lisp_t *l, lisp_cell_t *args, lisp_cell_t *code, lisp_cell_t *env) { return lisp_make_object(l, LISP_FUNCTION, 3, args, code, env); }
+static inline lisp_cell_t *lisp_mkfexpr(lisp_t *l, lisp_cell_t *args, lisp_cell_t *code, lisp_cell_t *env) { return lisp_make_object(l, LISP_FEXPR, 3, args, code, env); }
 static inline void *lisp_primparam(lisp_cell_t *c) { assert(c); assert(lisp_type_get(c) == LISP_PRIMITIVE); return c->t[1].v; }
 static inline int lisp_ispropercons(lisp_t *l, lisp_cell_t *c) { 
 	if (!c) { l->fatal = 1; return 0; } 
@@ -276,6 +278,7 @@ static void lisp_mark(lisp_t *l, lisp_cell_t *c) {
 	if (!c) return;
 	if (lisp_gc_get(c)) return;
 	switch (lisp_type_get(c)) {
+		case LISP_FEXPR:
 		case LISP_FUNCTION:
 			lisp_gc_set(c, 1);
 			lisp_mark(l, lisp_procargs(c));
@@ -401,7 +404,6 @@ again:
 					lisp_setcdr(l, prev, hv);
 					n = lisp_cdr(l, n);
 					lisp_setcdr(l, v, n);
-
 				} else {
 					lisp_setcar(l, n, lisp_eval(l, 0, lisp_cons(l, l->Quasi, lisp_car(l, n)), env, depth + 1));
 				}
@@ -422,6 +424,12 @@ again:
 			lisp_cell_t *v = lisp_eval(l, 0, lisp_car(l, n), env, depth + 1);
 			exp = lisp_car(l, lisp_cdr(l, lisp_cdr(l, lisp_isnil(l, v) ? n : exp)));
 			goto again;
+		} else if (op == l->IfNot) {
+			lisp_cell_t *v = lisp_eval(l, 0, lisp_car(l, n), env, depth + 1);
+			if (!lisp_isnil(l, v))
+				return v;
+			exp = lisp_car(l, lisp_cdr(l, n));
+			goto again;
 		} else if (op == l->Loop) {
 			lisp_cell_t *last = l->Nil, *cond = lisp_car(l, n);
 			exp = lisp_cons(l, l->Progn, lisp_cdr(l, n));
@@ -435,7 +443,12 @@ again:
 			l->gc_stack_used = gc_saved_stack;
 			return lisp_gc_stack_add(l, last);
 		} else if (op == l->Fn) {
+			//lisp_cell_t *t = lisp_mkproc(l, lisp_car(l, n), lisp_eval(l, -1, lisp_cdr(l, n), env, depth + 1), env);
 			lisp_cell_t *t = lisp_mkproc(l, lisp_car(l, n), lisp_cdr(l, n), env);
+			l->gc_stack_used = gc_saved_stack;
+			return lisp_gc_stack_add(l, t);
+		} else if (op == l->Fexpr) {
+			lisp_cell_t *t = lisp_mkfexpr(l, lisp_car(l, n), lisp_cdr(l, n), env);
 			l->gc_stack_used = gc_saved_stack;
 			return lisp_gc_stack_add(l, t);
 		} else if (op == l->Define) {
@@ -463,8 +476,9 @@ again:
 			goto again;
 		}
                 lisp_cell_t *proc = lisp_eval(l, 0, op, env, depth + 1);
-                lisp_cell_t *vals = lisp_eval(l, 1, n,  env, depth + 1);
-                if (lisp_type_get(proc) == LISP_FUNCTION) {
+		const int type = lisp_type_get(proc);
+                lisp_cell_t *vals = type != LISP_FEXPR ? lisp_eval(l, 1, n,  env, depth + 1) : n;
+                if (type == LISP_FUNCTION || type == LISP_FEXPR) {
 			lisp_cell_t *scope = l->dynamic_scope ? env : lisp_procenv(proc);
 			lisp_cell_t *args = lisp_procargs(proc);
 			const int single = lisp_type_get(args) == LISP_SYMBOL;
@@ -482,9 +496,9 @@ again:
                 }
 		l->depth = depth;
 		l->current = env;
-                if (lisp_type_get(proc) == LISP_PRIMITIVE) /* N.B. we could add an `env` parameter to all primitives */
+                if (type == LISP_PRIMITIVE) /* N.B. we could add an `env` parameter to all primitives */
                 	return lisp_primop(proc)(l, vals, lisp_primparam(proc));
-		return l->Error;
+		return l->Error; /* We really could improve error reporting */
 		}
 		break;
 	case LISP_SYMBOL: {
@@ -497,7 +511,7 @@ again:
 		}
 		break;
 	default: /* unknown types return self */
-	case LISP_INTEGER: case LISP_FUNCTION: case LISP_PRIMITIVE:
+	case LISP_INTEGER: case LISP_FUNCTION: case LISP_PRIMITIVE: case LISP_FEXPR:
 		return exp;
 	}
 	return exp;
@@ -713,8 +727,9 @@ LISP_API int lisp_write(lisp_t *l, int (*put)(void *param, int ch), void *param,
 		if (lisp_print_number(lisp_intval(obj), put, param) < 0) goto fatal;
 		return lisp_puts(put, param, " ");
 	}
+	case LISP_FEXPR:
 	case LISP_FUNCTION: {
-		if (lisp_puts(put, param, "(fn ") < 0) goto fatal;
+		if (lisp_puts(put, param, lisp_type_get(obj) == LISP_FUNCTION ? "(fn " : "(fexpr ") < 0) goto fatal;
 		if (lisp_write(l, put, param, lisp_procargs(obj), depth + 1) < 0) return -1;
 		if (lisp_puts(put, param, " ") < 0) goto fatal;
 		for (lisp_cell_t *c = lisp_proccode(obj); !lisp_isnil(l, c); c = lisp_cdr(l, c))
@@ -801,6 +816,49 @@ static lisp_cell_t *lisp_prim_car(lisp_t *l, lisp_cell_t *args, void *param) { (
 static lisp_cell_t *lisp_prim_cdr(lisp_t *l, lisp_cell_t *args, void *param) { (void)param; return lisp_cdr(l, lisp_car(l, args)); }
 static lisp_cell_t *lisp_prim_type(lisp_t *l, lisp_cell_t *args, void *param) { (void)param; return lisp_mkint(l, lisp_type_get(lisp_car(l, args))); }
 
+static lisp_cell_t *lisp_prim_assoc(lisp_t *l, lisp_cell_t *args, void *param) { 
+	(void)param; 
+	lisp_cell_t *env = lisp_car(l, lisp_cdr(l, args));
+	env = lisp_isnil(l, env) || env == l->Error ? l->current : env;
+	return lisp_assoc(l, lisp_car(l, args), env); 
+}
+
+static lisp_cell_t *lisp_prim_eval(lisp_t *l, lisp_cell_t *args, void *param) { 
+	lisp_cell_t *env = lisp_car(l, lisp_cdr(l, args));
+	env = lisp_isnil(l, env) || env == l->Error ? l->current : env;
+	return lisp_eval(l, (intptr_t)param, lisp_car(l, args), env, l->depth + 1); 
+}
+
+static lisp_cell_t *lisp_prim_env(lisp_t *l, lisp_cell_t *args, void *param) { 
+	if (lisp_asserts(l) < 0) return l->Error; 
+	if (lisp_isnil(l, args)) return (lisp_cell_t*)param;
+	lisp_cell_t *func = lisp_car(l, args);
+	if (lisp_isnil(l, func)) return (lisp_cell_t*)param;
+	if (func == l->Tee) return l->current;
+	if (lisp_type_get(func) != LISP_FUNCTION) return l->Error;
+	return lisp_procenv(func);
+}
+
+static lisp_cell_t *lisp_prim_gensym(lisp_t *l, lisp_cell_t *args, void *param) {
+	(void)param;
+	(void)args;
+	char buf[64 + 3] = { '\'', };
+	if (!lisp_number_to_string(buf + 1, l->gensym++, 10)) return l->Error;
+	return lisp_intern(l, buf /* not return value of `lisp_number_to_string` */);
+}
+
+static lisp_cell_t *lisp_prim_setcar(lisp_t *l, lisp_cell_t *args, void *param) {
+	(void)param;
+	lisp_setcar(l, lisp_car(l, args), lisp_car(l, lisp_cdr(l, args)));
+	return lisp_car(l, args);
+}
+
+static lisp_cell_t *lisp_prim_setcdr(lisp_t *l, lisp_cell_t *args, void *param) {
+	(void)param;
+	lisp_setcdr(l, lisp_car(l, args), lisp_car(l, lisp_cdr(l, args)));
+	return lisp_car(l, args);
+}
+
 LISP_API int lisp_init(lisp_t *l) {
 	assert(l);
 	if (l->init) return 0;
@@ -816,8 +874,10 @@ LISP_API int lisp_init(lisp_t *l) {
 	if (!(l->Eof     = lisp_intern(l, "%"))) goto fail;
 	if (!(l->Quote   = lisp_intern(l, "quote"))) goto fail; /* these definitions could be static */
 	if (!(l->If      = lisp_intern(l, "if"))) goto fail;
+	if (!(l->IfNot   = lisp_intern(l, "ifnot"))) goto fail;
 	if (!(l->Loop    = lisp_intern(l, "do"))) goto fail;
 	if (!(l->Fn      = lisp_intern(l, "fn"))) goto fail;
+	if (!(l->Fexpr   = lisp_intern(l, "fexpr"))) goto fail;
 	if (!(l->Set     = lisp_intern(l, "set"))) goto fail;
 	if (!(l->Progn   = lisp_intern(l, "pgn"))) goto fail;
 	if (!(l->Define  = lisp_intern(l, "def"))) goto fail;
@@ -829,6 +889,14 @@ LISP_API int lisp_init(lisp_t *l) {
 	if (lisp_function_add(l, "car", lisp_prim_car, NULL) < 0) goto fail;
 	if (lisp_function_add(l, "cdr", lisp_prim_cdr, NULL) < 0) goto fail;
 	if (lisp_function_add(l, "type", lisp_prim_type, NULL) < 0) goto fail;
+	if (lisp_function_add(l, "assoc", lisp_prim_assoc, NULL) < 0) goto fail;
+	if (lisp_function_add(l, "env", lisp_prim_env, (void*)l->env) < 0) goto fail;
+	if (lisp_function_add(l, "eval", lisp_prim_eval, (void*)0l) < 0) goto fail;
+	if (lisp_function_add(l, "evlis", lisp_prim_eval, (void*)1l) < 0) goto fail;
+	if (lisp_function_add(l, "expand", lisp_prim_eval, (void*)-1l) < 0) goto fail;
+	if (lisp_function_add(l, "setcar", lisp_prim_setcar, NULL) < 0) goto fail;
+	if (lisp_function_add(l, "setcdr", lisp_prim_setcdr, NULL) < 0) goto fail;
+	if (lisp_function_add(l, "gensym", lisp_prim_gensym, NULL) < 0) goto fail;
 	static const char *arith[] = { "add", "sub", "band", "bor", "bxor", "mul", "div", "mod", "lls", "lrs", "min", "max", };
 	for (size_t i = 0; i < LISP_NELEMS(arith); i++)
 		if (lisp_function_add(l, arith[i], lisp_prim_arith, (void*)i) < 0)

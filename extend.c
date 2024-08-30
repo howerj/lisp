@@ -6,33 +6,10 @@
 #include <time.h>
 #include <signal.h>
 
-static lisp_cell_t *lisp_prim_assoc(lisp_t *l, lisp_cell_t *args, void *param) { 
-	(void)param; 
-	lisp_cell_t *env = lisp_car(l, lisp_cdr(l, args));
-	env = lisp_isnil(l, env) || env == l->Error ? l->current : env;
-	return lisp_assoc(l, lisp_car(l, args), env); 
-}
-
-static lisp_cell_t *lisp_prim_eval(lisp_t *l, lisp_cell_t *args, void *param) { 
-	lisp_cell_t *env = lisp_car(l, lisp_cdr(l, args));
-	env = lisp_isnil(l, env) || env == l->Error ? l->current : env;
-	return lisp_eval(l, (intptr_t)param, lisp_car(l, args), env, l->depth + 1); 
-}
-
-static lisp_cell_t *lisp_prim_env(lisp_t *l, lisp_cell_t *args, void *param) { 
-	if (lisp_asserts(l) < 0) return l->Error; 
-	if (lisp_isnil(l, args)) return (lisp_cell_t*)param;
-	lisp_cell_t *func = lisp_car(l, args);
-	if (lisp_isnil(l, func)) return (lisp_cell_t*)param;
-	if (func == l->Tee) return l->current;
-	if (lisp_type_get(func) != LISP_FUNCTION) return l->Error;
-	return lisp_procenv(func);
-}
-
 static lisp_cell_t *lisp_prim_gc(lisp_t *l, lisp_cell_t *args, void *param) {
 	if (lisp_asserts(l) < 0) return l->Error; 
 	(void)param;
-	if (lisp_isnil(l, args)) {
+	if (lisp_isnil(l, args)) { /* we could set the collection period */
 		lisp_gc(l, 0);
 		return l->gc ? l->Tee : l->Nil;
 	}
@@ -75,19 +52,6 @@ static lisp_cell_t *lisp_prim_get(lisp_t *l, lisp_cell_t *args, void *param) {
 	FILE *in = param;
 	(void)args;
 	return lisp_mkint(l, fgetc(in));
-}
-
-static lisp_cell_t *lisp_prim_setcar(lisp_t *l, lisp_cell_t *args, void *param) {
-	(void)param;
-	lisp_setcar(l, lisp_car(l, args), lisp_car(l, lisp_cdr(l, args)));
-	return lisp_car(l, args);
-}
-
-
-static lisp_cell_t *lisp_prim_setcdr(lisp_t *l, lisp_cell_t *args, void *param) {
-	(void)param;
-	lisp_setcdr(l, lisp_car(l, args), lisp_car(l, lisp_cdr(l, args)));
-	return lisp_car(l, args);
 }
 
 static lisp_cell_t *lisp_prim_getenv(lisp_t *l, lisp_cell_t *args, void *param) {
@@ -157,14 +121,6 @@ static lisp_cell_t *lisp_prim_memory(lisp_t *l, lisp_cell_t *args, void *param) 
 		l->Nil))))))));
 }
 
-static lisp_cell_t *lisp_prim_gensym(lisp_t *l, lisp_cell_t *args, void *param) {
-	(void)param;
-	(void)args;
-	char buf[64 + 3] = { '\'', };
-	if (!lisp_number_to_string(buf + 1, l->gensym++, 10)) return l->Error;
-	return lisp_intern(l, buf /* not return value of `lisp_number_to_string` */);
-}
-
 static lisp_cell_t *lisp_prim_cell(lisp_t *l, lisp_cell_t *args, void *param) {
 	(void)param;
 	const uintptr_t idx = lisp_compval(lisp_car(l, lisp_cdr(l, args)));
@@ -217,26 +173,18 @@ int lisp_extend(lisp_t *l) { /* We could put some stuff in `atexit` maybe */
 	if (lisp_asserts(l) < 0) return -1;
 	typedef struct { const char *name; lisp_function_t fn; void *arg; } lisp_extend_t;
 	lisp_extend_t fns[] = {
-		{  "assoc",    lisp_prim_assoc,    NULL,    },
 		{  "depth",    lisp_prim_depth,    NULL,    },
-		{  "env",      lisp_prim_env,      l->env,  },
-		{  "eval",     lisp_prim_eval,     (void*)0l,  },
-		{  "evlis",    lisp_prim_eval,     (void*)1l,  },
-		{  "expand",   lisp_prim_eval,     (void*)-1l, },
 		{  "fatal",    lisp_prim_fatal,    NULL,    },
 		{  "gc",       lisp_prim_gc,       NULL,    },
 		{  "get",      lisp_prim_get,      stdin,   },
 		{  "put",      lisp_prim_put,      stdout,  },
 		{  "scope",    lisp_prim_scope,    NULL,    },
-		{  "setcar",   lisp_prim_setcar,   NULL,    },
-		{  "setcdr",   lisp_prim_setcdr,   NULL,    },
 		{  "getenv",   lisp_prim_getenv,   NULL,    },
 		{  "save",     lisp_prim_save,     NULL,    },
 		{  "load",     lisp_prim_load,     NULL,    },
 		{  "symbols",  lisp_prim_symbols,  NULL,    },
 		{  "exit",     lisp_prim_exit,     NULL,    },
 		{  "memory",   lisp_prim_memory,   NULL,    },
-		{  "gensym",   lisp_prim_gensym,   NULL,    },
 		{  "cell",     lisp_prim_cell,     NULL,    },
 		{  "eof",      lisp_prim_param,    l->Eof,  },
 		{  "time",     lisp_prim_time,     NULL,    },

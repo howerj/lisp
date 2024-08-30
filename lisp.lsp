@@ -16,36 +16,37 @@
   (def license '0BSD)
   (def repo 'https://github.com/howerj/lisp)
   (def email 'howe.r.j.89@gmail.com)
-  (def caar (fn (x) car (car x)))
-  (def cadr (fn (x) car (cdr x)))
-  (def cdar (fn (x) cdr (car x)))
-  (def cddr (fn (x) cdr (cdr x)))
-  (def not (fn (x) if x nil t))
-  (def inc (fn (_) add _ 1))
-  (def dec (fn (_) add _ -1))
-  (def bool (fn (_) if (eq _ 0) nil t))
-  (def atom (fn (x) neq (type x) (type (cons nil nil))))
-  (def invert (fn (_) bxor _ -1))
-  (def negate (fn (_) mul _ -1))
-  (def cons? (fn (x) not (atom x)))
-  (def signum (fn (_) if (more _ 0) 1 (if (less _ 0) -1 0)))
-  (def error? (fn (x) eq '! x))
-  (def null (fn (x) if x nil t))
-  (def id (fn (x) pgn x))
-  (def list (fn _ pgn _))
-  (def odd? (fn (x) eq 1 (band x 1)))
-  (def even? (fn (x) eq 0 (band x 1)))
-  (def abs (fn (_) if (less _ 0) (negate _) (id _)))
+  (def defun
+     (fexpr (name args . code)
+       eval (expand (cons 'def (cons name (cons (cons 'fn (cons args code)) nil)))) (env)))
+  (defun caar (x) car (car x))
+  (defun cadr (x) car (cdr x))
+  (defun cdar (x) cdr (car x))
+  (defun cddr (x) cdr (cdr x))
+  (defun not (x) if x nil t)
+  (defun inc (_) add _ 1)
+  (defun dec (_) add _ -1)
+  (defun bool (_) if (eq _ 0) nil t)
+  (defun atom (x) neq (type x) (type (cons nil nil)))
+  (defun invert (_) bxor _ -1)
+  (defun negate (_) mul _ -1)
+  (defun cons? (x) not (atom x))
+  (defun signum (_) if (more _ 0) 1 (if (less _ 0) -1 0))
+  (defun null (x) if x nil t)
+  (defun id (x) pgn x)
+  (defun list _ pgn _)
+  (defun odd? (x) eq 1 (band x 1))
+  (defun even? (x) eq 0 (band x 1))
+  (defun abs (_) if (less _ 0) (negate _) (id _))
   (def #bits 0)
   (set #bits (add 1 ((fn (x) do (more x 0) (set x (lls x 1)) (set #bits (add #bits 1))) 1)))
   (def #bytes (div #bits 8))
   (def #min (lls 1 (sub #bits 1)))
   (def #max (bxor -1 #min))
-  (def extension (cons? (set env))) ; Test for function that only exists in the extension code
-  (def copy (fn (l) if (atom l) l (cons (car l) (copy (cdr l))))) ; create a copy of list
-  (def log (fn (n b) pgn (def r 0) (do (bool n) (set r (inc r)) (set n (div n b)) (id r))))
-  (def popcnt 
-       (fn (n) 
+  (def extension (cons? (set exit))) ; Test for function that only exists in the extension code
+  (defun copy (l) if (atom l) l (cons (car l) (copy (cdr l)))) ; create a copy of list
+  (defun log (n b) pgn (def r 0) (do (bool n) (set r (inc r)) (set n (div n b)) (id r)))
+  (defun popcnt (n) 
            pgn 
            (def r 0) 
            (if (eq 0 n) 
@@ -54,72 +55,63 @@
              (bool n) 
              (set r (if (neq 0 (band n 1)) (inc r) (id r))) 
              (set n (lrs n 1)) 
-             (id r)))))
-  (def gcd (fn (n m) if (eq m 0) n (gcd m (mod n m))))
-  (def lcm (fn (n m) div (mul n m) (gcd n m)))
-  (def square (fn (_) mul _ _))
-  (def double (fn (_) add _ _))
-  (def reverse ; reverse a list
-     (fn (x) 
+             (id r))))
+  (defun gcd (n m) if (eq m 0) n (gcd m (mod n m)))
+  (defun lcm (n m) div (mul n m) (gcd n m))
+  (defun square (_) mul _ _)
+  (defun double (_) add _ _)
+  (defun reverse (x) ; reverse a list
          pgn
          (def _ nil)
          (do
            (cons? x)
            (set _ (cons (car x) _))
            (set x (cdr x))
-           (id _))))
-  (def length ; length of a list
-     (fn (x) 
+           (id _)))
+  (defun length (x) ; length of a list
          pgn
          (def _ 0)
          (do
            (cons? x)
            (set x (cdr x))
            (set _ (add _ 1)))
-         (id _)))
-  (def memb ; is atom `v` a list of `l`, returning rest of list
-     (fn (v l)
+         (id _))
+  (defun memb (v l) ; is atom `v` a list of `l`, returning rest of list
          do 
          (if (cons? l) (neq v (car l)) nil)
          (set l (cdr l))
-         (id l)))
-  (def equal ; are two trees equal?
-     (fn (a b)
+         (id l))
+  (defun equal (a b) ; are two trees equal?
          if (atom a) (if (atom b) (eq a b) nil)
          (if (atom b) nil
-         (if (equal (car a) (car b)) (equal (cdr a) (cdr b)) nil))))
-  (def nthcar ; get n-th element of list
-     (fn (n l)
+         (if (equal (car a) (car b)) (equal (cdr a) (cdr b)) nil)))
+  (defun nthcar (n l) ; get n-th element of list
          if (leq n 0) l 
          (do
            (more n 0)
            (set n (add n -1))
-           (set l (if (cons? l) (cdr l) nil)))))
-  (def nth (fn (n l) pgn (set l (nthcar n l)) (if (cons? l) (car l) nil)))
-  (def append ; append to a list
-     (fn (x y)
+           (set l (if (cons? l) (cdr l) nil))))
+  (defun nth (n l) pgn (set l (nthcar n l)) (if (cons? l) (car l) nil))
+  (defun append (x y) ; append to a list
          if (null x) y
-         (cons (car x) (append (cdr x) y))))
-  (def flatten ; flatten a list `(a (b) c)` -> `(a b c)`
-     (fn (l)
+         (cons (car x) (append (cdr x) y)))
+  (defun flatten (l) ; flatten a list `(a (b) c)` -> `(a b c)`
          if (null l) l
          (if (atom l) (list l)
-           (append (flatten (car l)) (flatten (cdr l))))))
-  (def subst ; substitute all `from` with `to` in tree
-    (fn (to from tree)
+           (append (flatten (car l)) (flatten (cdr l)))))
+  (defun subst (to from tree) ; substitute all `from` with `to` in tree
       if (atom tree)
       (if (eq tree from) to tree)
       (cons (subst to from (car tree))
-            (subst to from (cdr tree)))))
-  (def last ; last element of a list
-     (fn (l)
+            (subst to from (cdr tree))))
+  (defun last (l) ; last element of a list
          pgn
          (def r (car l))
          (do
            (cons? l)
            (set r (car l))
            (set l (cdr l))
-           (id r))))
+           (id r)))
   (def random ; XORSHIFT32, although not capped if 64-bit
        ((fn () pgn ; Form closure hiding global state `seed`
             (def seed (add nil)) ; Get pointer value of `nil`, hopefully will change each run (Address space layout randomization?)
@@ -129,10 +121,9 @@
                   (set seed (bxor seed (lls seed 13)))
                   (set seed (bxor seed (lrs seed 7)))
                   (set seed (bxor seed (lls seed 17)))))))
-  (def lat? ; Is List Of Atoms?
-   (fn (l)
+  (defun lat? (l) ; Is List Of Atoms?
      if (null l) t
-     (if (atom (car l)) (lat? (cdr l)) nil)))
+     (if (atom (car l)) (lat? (cdr l)) nil))
   (def sort ; Sort a list of numbers
      ((fn ()
          pgn
@@ -153,32 +144,26 @@
          (sort-insert 
            (car l)
            (sort (cdr l)))))))
-  (def member ; Find `a` in list of atoms
-     (fn (a lat) 
+  (defun member (a lat) ; Find `a` in list of atoms
          if (atom lat) nil
          (if (eq (car lat) a)
-           t (member a (cdr lat)))))
-  (def remove-member 
-    (fn (a lat)
+           t (member a (cdr lat))))
+  (defun remove-member (a lat)
      if (null lat) nil
      (if (eq (car lat) a) (remove-member a (cdr lat))
-       (cons (car lat) (remove-member a (cdr lat))))))
-  (def list-tail ; Exclude all the elements from 0 to k in a list
-     (fn (l k)
+       (cons (car lat) (remove-member a (cdr lat)))))
+  (defun list-tail (l k) ; Exclude all the elements from 0 to k in a list
        if (eq k 0) l
-        (list-tail (cdr l) (sub k 1))))
-  (def list-head ; Get all the elements from 0 to k in a list
-      (fn (l k)
+        (list-tail (cdr l) (sub k 1)))
+  (defun list-head (l k) ; Get all the elements from 0 to k in a list
         if (eq k 0) (cons (car l) nil)
-        (cons (car l) (list-head (cdr l) (sub k 1)))))
-  (def sublist
-      (fn (l start end)
-       list-tail (list-head l end) start))
-  (def random-element ; pick a random element from a list
-      (fn (l)
+        (cons (car l) (list-head (cdr l) (sub k 1))))
+  (defun sublist (l start end)
+       list-tail (list-head l end) start)
+  (defun random-element (l) ; pick a random element from a list
         pgn
         (def item (mod (abs (random)) (length l)))
-        (car (sublist l item item))))
+        (car (sublist l item item)))
   (def *months* ; months of the year association list
     '((0 . January)  (1 . February)  (2 . March) 
       (3 . April)    (4 . May)       (5 . June) 
@@ -192,8 +177,7 @@
   ; reasonable. Perhaps we should just use Unix time in day to day conversation
   ; just so I do not have to look at this code, alternatively we could all go
   ; live under rocks.
-  (def date ; Convert Unix Time to a Date List
-     (fn (z) ; See <https://stackoverflow.com/questions/7960318>
+  (defun date (z) ; Convert Unix Time to a Date List, See <https://stackoverflow.com/questions/7960318>
          pgn
          (def o z)
          (set z (div z 86400)) ; z -> Days
@@ -206,9 +190,8 @@
          (def mp (div (add 2 (mul 5 doy)) 153))
          (def d (sub (add 1 doy) (div (add 2 (mul mp 153)) 5)))
          (def m (add mp (if (less mp 10) 3 -9)))
-         (list (add y (if (leq m 2) 1 0)) m d (div (mod o 86400) 3600) (div (mod o 3600) 60) (mod o 60))))
-  (def unix ; Convert Date List `(year months days hours minutes seconds)` to Unix Time
-     (fn (z) ; test with `(date (unix (date (time))))`, or with known dates.
+         (list (add y (if (leq m 2) 1 0)) m d (div (mod o 86400) 3600) (div (mod o 3600) 60) (mod o 60)))
+  (defun unix (z) ; Convert Date List `(year months days hours minutes seconds)` to Unix Time
          pgn
          (def y (car z)) (set z (cdr z))
          (def m (car z)) (set z (cdr z))
@@ -222,11 +205,10 @@
          (def yoe (abs (sub y (mul era 400))))
          (def doy (add (div (add (mul 153 (add m (if (more m 2) -3 9))) 2) 5) d -1))
          (def doe (add (mul yoe 365) (div yoe 4) (negate (div yoe 100)) doy))
-         (add r (mul 86400 (add (mul era 146097) doe -719468)))))
+         (add r (mul 86400 (add (mul era 146097) doe -719468))))
   ; https://en.wikipedia.org/wiki/Zeller%27s_congruence
   ; https://news.ycombinator.com/item?id=11358999
-  (def day-of-week 
-   (fn (z)
+  (defun day-of-week (z)
     pgn
       (set year (car z)) (set z (cdr z))
       (set month (car z)) (set z (cdr z))
@@ -243,50 +225,86 @@
         4
         (div year 4)
         (negate (div year 100))
-        (div year 400)) 7)))
-  (def day? 
-       (fn (s) 
+        (div year 400)) 7))
+  (defun day? (s)
            pgn 
            (def d (date s)) 
-           (cdr (assoc (day-of-week (list (car d) (cadr d) (car (cddr d)))) *week-days*))))
-  (def unique? ; is a list a set (no repeated symbols)
-     (fn (lat)
+           (cdr (assoc (day-of-week (list (car d) (cadr d) (car (cddr d)))) *week-days*)))
+  (defun unique? (lat) ; is a list a set (no repeated symbols)
 	 if (null lat) t
 	 (if (member (car lat) (cdr lat)) nil
-	   (unique? (cdr lat)))))
-  (def subset ; A ⊆ B
-    (fn (a b)
-      if
-      (null a) t
+	   (unique? (cdr lat))))
+  (defun subset (a b) ; A ⊆ B
+      if (null a) t
       (if (member (car a) b)
 	(subset (cdr a) b)
-	nil)))
-  (def eqset ; A = B
-    (fn (a b) if (subset a b) (subset b a) nil))
-  (def intersects ; (A ∩ B)?
-    (fn (a b)
+	nil))
+  (defun eqset (a b) ; A = B
+    if (subset a b) (subset b a) nil)
+  (defun intersects (a b) ; (A ∩ B)?
       if (null a) nil
         (if (member (car a) b) t
-        (intersects (cdr a) b))))
-  (def intersection ; A ∩ B 
-    (fn (a b)
+        (intersects (cdr a) b)))
+  (defun intersection (a b) ; A ∩ B 
       if (null a) nil
         (if (member (car a) b)
 	  (cons (car a)
 	      (intersection (cdr a) b))
-	  (intersection (cdr a) b))))
-  (def union ; A ∪ B
-    (fn (a b)
+	  (intersection (cdr a) b)))
+  (defun union (a b) ; A ∪ B
       if (null a) b
       (if (member (car a) b) (union (cdr a) b)
-        (cons (car a) (union (cdr a) b)))))
-  (def a\b ; a \ b
-    (fn (a b)
+        (cons (car a) (union (cdr a) b))))
+  (defun a\b (a b) ; a \ b
       if (null a) nil
       (if (member (car a) b) (a\b (cdr a) b)
-      (cons (car a) (a\b (cdr a) b)))))
-  (def relative-difference (fn (a b) a\b b a)) ; b \ a
-  (def symmetric-difference (fn (a b) union (a\b a b) (a\b b a))) ; A △ B
+      (cons (car a) (a\b (cdr a) b))))
+  (defun relative-difference (a b) a\b b a) ; b \ a
+  (defun symmetric-difference (a b) union (a\b a b) (a\b b a)) ; A △ B
+  (def apply (pgn
+         (set func (gensym))
+         (set args (gensym))
+         (eval (expand @(fn (,func ,args) eval (cons ,func ,args))))))
+  (def mapcar
+     (pgn
+       (set f (gensym))
+       (set l (gensym))
+       (set r (gensym))
+       (eval (expand @(fn (,f ,l)
+         pgn
+         (set ,r nil)
+         (reverse (do
+           (cons? ,l)
+           (set ,r (cons (eval (list ,f (car ,l))) ,r))
+           (set ,l (cdr ,l))
+           (id ,r))))))))
+  (def fold ; TODO: Work for `list` ? Also foldl/foldr
+     (pgn
+       (set f (gensym))
+       (set l (gensym))
+       (set r (gensym))
+       (eval (expand @(fn (,f ,l)
+       if (atom ,l) ,l
+       (if (atom (cdr ,l)) (car ,l)
+        (pgn
+         (set ,r (car ,l))
+         (set ,l (cdr ,l))
+         (do
+          (cons? ,l)
+          (set ,r (eval (list ,f ,r (car ,l))))
+          (set ,l (cdr ,l))
+          (id ,r)))))))))
+  (defun sum-of-squares l fold add (mapcar square l))
+  (defun + _ apply add _)
+  (defun * _ apply mul _)
+  (defun / _ apply div _)
+  (defun - _ apply sub _)
+  (defun = _ apply eq _)
+  (defun /= _ apply neq _)
+  (defun & _ apply band _)
+  (defun | _ apply bor _)
+  (defun ^ _ apply bxor _)
+  (defun ~ (_) invert _)
   (def history ())
   (def history? (fn (n) nth n history))
   (def history-push (fn (e) if (eq ! e) history (if (eq % e) history (set history (cons e history)))))
@@ -294,7 +312,6 @@
   (def history-clear (fn () set history ()))
   (def counter (fn (cnt inc) pgn (fn () set cnt (add cnt inc))))
   'ok)
-
 
 'BIST 
 (pgn ; A set of Built In Self Tests
@@ -378,64 +395,19 @@
 
 (if extension
   (pgn 
-    (def apply (pgn
-         (set func (gensym))
-         (set args (gensym))
-         (eval (expand @(fn (,func ,args) eval (cons ,func ,args))))))
-    (def mapcar
-     (pgn
-       (set f (gensym))
-       (set l (gensym))
-       (set r (gensym))
-       (eval (expand @(fn (,f ,l)
-         pgn
-         (set ,r nil)
-         (reverse (do
-           (cons? ,l)
-           (set ,r (cons (eval (list ,f (car ,l))) ,r))
-           (set ,l (cdr ,l))
-           (id ,r))))))))
-    (def fold ; TODO: Work for `list` ? Also foldl/foldr
-     (pgn
-       (set f (gensym))
-       (set l (gensym))
-       (set r (gensym))
-       (eval (expand @(fn (,f ,l)
-       if (atom ,l) ,l
-       (if (atom (cdr ,l)) (car ,l)
-        (pgn
-         (set ,r (car ,l))
-         (set ,l (cdr ,l))
-         (do
-          (cons? ,l)
-          (set ,r (eval (list ,f ,r (car ,l))))
-          (set ,l (cdr ,l))
-          (id ,r)))))))))
-    (def sum-of-squares (fn l fold add (mapcar square l)))
-    (def + (fn _ apply add _))
-    (def * (fn _ apply mul _))
-    (def / (fn _ apply div _))
-    (def - (fn _ apply sub _))
-    (def = (fn _ apply eq _))
-    (def /= (fn _ apply neq _))
-    (def & (fn _ apply band _))
-    (def | (fn _ apply bor _))
-    (def ^ (fn _ apply bxor _))
-    (def ~ (fn _ invert _))
-    (def nl (fn () put 10))
-    (def tab (fn () put 9))
-    (def space (fn () put 32))
+    (defun nl () put 10)
+    (defun tab () put 9)
+    (defun space () put 32)
     (def prompt (fn () pgn (nl) (put '>) (space) nil))
-    (def read (fn () in))
-    (def write (fn (_) out _))
-    (def print (fn (_) pgn (set _ (write _)) (nl) (bool _)))
-    (def writes (fn _ do (cons? _) (out (car _)) (set _ (cdr _)) t))
+    (defun read () in)
+    (defun write (_) out _)
+    (defun print (_) pgn (set _ (write _)) (nl) (bool _))
+    (defun writes _ do (cons? _) (out (car _)) (set _ (cdr _)) t)
     (def ansi (eq (getenv 'COLOR) 'on)) ; (def ansi t)
     (def csi (fn () pgn (put 27) (put '[)))
     (def reset (fn () if ansi (pgn (csi) (put 48) (put 'm) t) t))
     (def colors 
-         '(
-           (black . 0) (red . 1) (green . 2) 
+         '((black . 0) (red . 1) (green . 2) 
            (yellow . 3) (blue . 4) (magenta . 5)
            (cyan . 6) (white . 7)))
     (def color 
@@ -454,8 +426,7 @@
     (def magenta (fn () color 'magenta nil t))
     (def cyan    (fn () color 'cyan nil t))
     (def white   (fn () color 'white nil t))
-    (def colorize
-         (fn (_)
+    (defun colorize (_)
              pgn
              (if (eq (type _) (type 1)) (blue) nil)
              (if (eq (type _) (type 'a)) (yellow) nil)
@@ -467,12 +438,11 @@
              (if (eq (type _) (type id)) (cyan) nil)
              (write _)
              (reset)
-             t))
-    (def spaces (fn (_) do (more _ 0) (space) (set _ (dec _))))
-    (def lpar (fn () put 40))
-    (def rpar (fn () put 41))
-    (def _pretty ; A really poor pretty printer
-         (fn (n d)
+             t)
+    (defun spaces (_) do (more _ 0) (space) (set _ (dec _)))
+    (defun lpar () put 40)
+    (defun rpar () put 41)
+    (defun _pretty (n d) ; A really poor pretty printer
              if (atom n) (colorize n)
              (pgn
                (nl)
@@ -490,9 +460,9 @@
                (rpar)
                (nl)
                (spaces (double d))
-               t)))
-    (def pp (fn (n) _pretty n 0))
-    (def pretty (fn (n) _pretty n 0))
+               t))
+    (defun pp (n) _pretty n 0)
+    (defun pretty (n) _pretty n 0)
     (def history-save (fn () save '.history history))
     (def history-load (fn () if (eq ! (set history (load '.history))) (set history ()) history))
     (writes 'Progam 'Lisp) 
@@ -522,7 +492,34 @@
     t)
   'ok)
 
+(def and ; TODO: Macro expansion
+     (fexpr args
+	    pgn
+	    (set args (reverse args))
+	    (def r nil)
+	    (def f t)
+	    (list 'pgn (do
+	      (cons? args)
+	      pgn
+	      (set l (null (cdr args)))
+	      (set n (list (if f 'ifnot 'if) (car args)))
+	      (set r (if f n (append n (list r nil))))
+	      (set f nil)
+	      (set args (cdr args))
+	      (id r)))))
 
+(def or
+     (fexpr args
+	    pgn
+	    (set args (reverse args))
+	    (def r nil)
+	    (do
+	      (cons? args)
+	      pgn
+	      (set l (cons? (cdr args)))
+	      (set r (list 'ifnot (car args) r))
+	      (set args (cdr args))
+	      (id r))))
 
 ; (define make-set 
 ;   (let
