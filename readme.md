@@ -115,6 +115,9 @@ interned) but that would add a lot of size to the interpreter.
   being able to borrow bits from pointers for other purposes, ability 
   to use the location of an object as information about the object (e.g 
   all objects in this area of type X).
+* If you do not like the formatting, you could indent `lisp.h` with 
+  `indent -linux -nut -l 200 lisp.h` (you have to temporarily comment out
+  the C++ `extern` line, otherwise the formatting is a bit off).
 
 ## Bugs and Limitations
 

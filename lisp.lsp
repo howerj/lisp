@@ -231,14 +231,14 @@
            (def d (date s)) 
            (cdr (assoc (day-of-week (list (car d) (cadr d) (car (cddr d)))) *week-days*)))
   (defun unique? (lat) ; is a list a set (no repeated symbols)
-	 if (null lat) t
-	 (if (member (car lat) (cdr lat)) nil
-	   (unique? (cdr lat))))
+         if (null lat) t
+         (if (member (car lat) (cdr lat)) nil
+           (unique? (cdr lat))))
   (defun subset (a b) ; A ⊆ B
       if (null a) t
       (if (member (car a) b)
-	(subset (cdr a) b)
-	nil))
+        (subset (cdr a) b)
+        nil))
   (defun eqset (a b) ; A = B
     if (subset a b) (subset b a) nil)
   (defun intersects (a b) ; (A ∩ B)?
@@ -248,9 +248,9 @@
   (defun intersection (a b) ; A ∩ B 
       if (null a) nil
         (if (member (car a) b)
-	  (cons (car a)
-	      (intersection (cdr a) b))
-	  (intersection (cdr a) b)))
+          (cons (car a)
+              (intersection (cdr a) b))
+          (intersection (cdr a) b)))
   (defun union (a b) ; A ∪ B
       if (null a) b
       (if (member (car a) b) (union (cdr a) b)
@@ -492,34 +492,35 @@
     t)
   'ok)
 
-(def and ; TODO: Macro expansion
-     (fexpr args
-	    pgn
-	    (set args (reverse args))
-	    (def r nil)
-	    (def f t)
-	    (list 'pgn (do
-	      (cons? args)
-	      pgn
-	      (set l (null (cdr args)))
-	      (set n (list (if f 'ifnot 'if) (car args)))
-	      (set r (if f n (append n (list r nil))))
-	      (set f nil)
-	      (set args (cdr args))
-	      (id r)))))
-
-(def or
-     (fexpr args
-	    pgn
-	    (set args (reverse args))
-	    (def r nil)
-	    (do
-	      (cons? args)
-	      pgn
-	      (set l (cons? (cdr args)))
-	      (set r (list 'ifnot (car args) r))
-	      (set args (cdr args))
-	      (id r))))
+; (def and ; TODO: Macro expansion
+;      (fexpr args
+;             pgn
+;             (set args (reverse args))
+;             (def r nil)
+;             (def f t)
+;             (list 'pgn (do
+;               (cons? args)
+;               pgn
+;               (set l (null (cdr args)))
+;               (set n (list (if f 'ifnot 'if) (car args)))
+;               (set r (if f n (append n (list r nil))))
+;               (set f nil)
+;               (set args (cdr args))
+;               (id r)))))
+; 
+; (def or
+;      (fexpr args
+;             pgn
+;             (set args (reverse args))
+;             (def r nil)
+;             (do
+;               (cons? args)
+;               pgn
+;               (set l (cons? (cdr args)))
+;               (set r (list 'ifnot (car args) r))
+;               (set args (cdr args))
+;               (id r))))
+; 
 
 ; (define make-set 
 ;   (let
