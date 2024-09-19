@@ -144,6 +144,9 @@ interned) but that would add a lot of size to the interpreter.
   pointers (which can be avoided by using indexes instead), instead
   serialization could be achieved by reading and writing s-expressions to disk
   instead.
+* More information about pointer tagging in general can be found at
+  <https://coredumped.dev/2024/09/09/what-is-the-best-pointer-tagging-method/>,
+  which has been discussed at: <https://news.ycombinator.com/item?id=41488377>.
 
 # References
 
@@ -152,3 +155,4 @@ interned) but that would add a lot of size to the interpreter.
 * <https://en.wikipedia.org/wiki/Lisp_(programming_language)>
 * <http://t3x.org/klisp> (there are multiple great Lisp implementations on this
   site, in the public domain as well, one of which is VM based).
+
