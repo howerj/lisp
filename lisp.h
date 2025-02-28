@@ -94,8 +94,8 @@ static inline void lisp_length_set(lisp_cell_t *c, uintptr_t length) { assert(c)
 /* Lisp Cell helper function */
 static inline int lisp_iscons(lisp_cell_t *c) { assert(c); return lisp_type_get(c) == LISP_CONS; }
 static inline int lisp_isnil(lisp_t *l, lisp_cell_t *c) { lisp_asserts(l); if (!c) { l->fatal = 1; return 0; } return c == l->Nil; }
-static inline lisp_cell_t *lisp_car(lisp_t *l, lisp_cell_t *cons) { if (l->fatal || !cons || !lisp_iscons(cons)) return l->Error; return cons->t[0].l ? cons->t[0].l : l->Error; }
-static inline lisp_cell_t *lisp_cdr(lisp_t *l, lisp_cell_t *cons) { if (l->fatal || !cons || !lisp_iscons(cons)) return l->Error; return cons->t[1].l ? cons->t[1].l : l->Error; }
+static inline lisp_cell_t *lisp_car(lisp_t *l, lisp_cell_t *cons) { if (l->fatal || !cons || !lisp_iscons(cons)) return l->Error; /* could return nil */ return cons->t[0].l ? cons->t[0].l : l->Error; }
+static inline lisp_cell_t *lisp_cdr(lisp_t *l, lisp_cell_t *cons) { if (l->fatal || !cons || !lisp_iscons(cons)) return l->Error; /* could return nil */ return cons->t[1].l ? cons->t[1].l : l->Error; }
 static inline lisp_cell_t *lisp_setcar(lisp_t *l, lisp_cell_t *cons, lisp_cell_t *car) { assert(l); if (l->fatal || !cons || !lisp_iscons(cons) || !car) return l->Error; return cons->t[0].l = car; }
 static inline lisp_cell_t *lisp_setcdr(lisp_t *l, lisp_cell_t *cons, lisp_cell_t *cdr) { assert(l); if (l->fatal || !cons || !lisp_iscons(cons) || !cdr) return l->Error; return cons->t[1].l = cdr; }
 static inline intptr_t lisp_intval(lisp_cell_t *c) { assert(c); assert(lisp_type_get(c) == LISP_INTEGER); return c->t[0].n; }
